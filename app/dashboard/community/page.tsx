@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import Image from 'next/image'
 import Navbar from '@/components/Navbar'
 import Map from '@/components/Map'
@@ -8,10 +8,18 @@ import { AlertTriangle, Clock, CheckCircle, TrendingUp, MapPin, Bell, FileText, 
 import Link from 'next/link'
 import { Incident } from '@/types'
 import { useUser } from '@/contexts/UserContext'
+import { useIncidents } from '@/hooks/useIncidents'
 
 export default function CommunityDashboard() {
   const { user } = useUser()
-  const [incidents, setIncidents] = useState<Incident[]>([])
+  const { incidents: allIncidents, loading } = useIncidents()
+  
+  // Filtrar solo los incidentes del usuario actual
+  const incidents = useMemo(() => {
+    if (!user?.UUID) return []
+    return allIncidents.filter((incident) => incident.CreatedById === user.UUID)
+  }, [allIncidents, user?.UUID])
+  
   const [carouselIndex, setCarouselIndex] = useState(0)
   
   const carouselItems = [
@@ -42,52 +50,6 @@ export default function CommunityDashboard() {
   const prevSlide = () => {
     setCarouselIndex((prev) => (prev - 1 + carouselItems.length) % carouselItems.length)
   }
-
-  useEffect(() => {
-    // Simulación de datos - aquí iría la llamada a la API filtrando por CreatedById
-    setIncidents([
-      {
-        Type: 'Fuga de agua',
-        UUID: '1',
-        Title: 'Fuga de agua en el baño del segundo piso',
-        Description: 'Fuga de agua en el baño del segundo piso',
-        ResponsibleArea: ['Infraestructura y mantenimiento'],
-        CreatedById: user?.UUID || 'user1',
-        CreatedByName: user?.FullName || 'Juan Pérez',
-        Status: 'PENDIENTE',
-        Priority: 'ALTA',
-        IsGlobal: false,
-        CreatedAt: '2024-11-15T10:30:00Z',
-        LocationTower: 'Torre A',
-        LocationFloor: 'Piso 2',
-        LocationArea: 'Baño',
-        Reference: 'REF-001',
-        PendienteReasignacion: false,
-        Comment: [],
-      },
-      {
-        Type: 'Luz dañada',
-        UUID: '2',
-        Title: 'Lámpara fundida en el pasillo principal',
-        Description: 'Lámpara fundida en el pasillo principal',
-        ResponsibleArea: ['Infraestructura y mantenimiento'],
-        CreatedById: user?.UUID || 'user1',
-        CreatedByName: user?.FullName || 'Juan Pérez',
-        Status: 'EN_ATENCION',
-        Priority: 'MEDIA',
-        IsGlobal: false,
-        CreatedAt: '2024-11-15T09:15:00Z',
-        ExecutingAt: '2024-11-15T10:00:00Z',
-        LocationTower: 'Torre B',
-        LocationFloor: 'Piso 1',
-        LocationArea: 'Pasillo',
-        Reference: 'REF-002',
-        AssignedToPersonalId: 'personal1',
-        PendienteReasignacion: false,
-        Comment: [],
-      },
-    ])
-  }, [user])
 
 
   return (

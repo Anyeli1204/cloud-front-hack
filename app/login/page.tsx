@@ -55,6 +55,17 @@ export default function LoginPage() {
           token: data.token,
           expiresAt: data.expiresAt,
         })
+        console.log('✅ [Login] Token guardado')
+
+        // Conectar al WebSocket después del login
+        console.log('🔌 [Login] Conectando WebSocket después del login...')
+        try {
+          const { wsClient } = await import('@/lib/websocket')
+          await wsClient.connect()
+          console.log('✅ [Login] WebSocket conectado exitosamente')
+        } catch (error) {
+          console.error('❌ [Login] Error al conectar WebSocket:', error)
+        }
 
             // Obtener datos del usuario usando el token
             try {

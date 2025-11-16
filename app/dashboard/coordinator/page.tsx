@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useMemo } from 'react'
 import Navbar from '@/components/Navbar'
 import Map from '@/components/Map'
 import { AlertTriangle, Clock, CheckCircle, TrendingUp, MapPin, Users, Settings, BarChart3, UserPlus } from 'lucide-react'
@@ -8,87 +8,36 @@ import Link from 'next/link'
 import { Incident } from '@/types'
 import { useUser } from '@/contexts/UserContext'
 import { format } from 'date-fns'
+import { useIncidents } from '@/hooks/useIncidents'
 
 export default function CoordinatorDashboard() {
   const { user } = useUser()
-  const [incidents, setIncidents] = useState<Incident[]>([])
-  const [pendingReassignment, setPendingReassignment] = useState<Incident[]>([])
+  // Obtener incidentes filtrados por área del coordinador
+  const { incidents: allIncidents, loading } = useIncidents(
+    user?.Area ? { area: user.Area } : undefined
+  )
+  
+  // Filtrar incidentes pendientes de reasignación
+  const pendingReassignment = useMemo(() => {
+    return allIncidents.filter((inc) => inc.PendienteReasignacion === true)
+  }, [allIncidents])
 
-  useEffect(() => {
-    // Simulación de datos - aquí iría la llamada a la API filtrando por área del coordinador
-    setIncidents([
-      {
-        Type: 'Fuga de agua',
-        UUID: '1',
-        Title: 'Fuga de agua en el baño del segundo piso',
-        Description: 'Fuga de agua en el baño del segundo piso',
-        ResponsibleArea: [user?.Area || 'Infraestructura y mantenimiento'],
-        CreatedById: 'user1',
-        CreatedByName: 'Juan Pérez',
-        Status: 'PENDIENTE',
-        Priority: 'ALTA',
-        IsGlobal: false,
-        CreatedAt: '2024-11-15T10:30:00Z',
-        LocationTower: 'Torre A',
-        LocationFloor: 'Piso 2',
-        LocationArea: 'Baño',
-        Reference: 'REF-001',
-        PendienteReasignacion: false,
-        Comment: [],
-      },
-      {
-        Type: 'Luz dañada',
-        UUID: '2',
-        Title: 'Lámpara fundida en el pasillo principal',
-        Description: 'Lámpara fundida en el pasillo principal',
-        ResponsibleArea: [user?.Area || 'Infraestructura y mantenimiento'],
-        CreatedById: 'user2',
-        CreatedByName: 'María García',
-        Status: 'EN_ATENCION',
-        Priority: 'MEDIA',
-        IsGlobal: false,
-        CreatedAt: '2024-11-15T09:15:00Z',
-        ExecutingAt: '2024-11-15T10:00:00Z',
-        LocationTower: 'Torre B',
-        LocationFloor: 'Piso 1',
-        LocationArea: 'Pasillo',
-        Reference: 'REF-002',
-        AssignedToPersonalId: 'personal1',
-        PendienteReasignacion: false,
-        Comment: [],
-      },
-    ])
+  // Filtrar incidentes del área (todos los demás)
+  const incidents = useMemo(() => {
+    return allIncidents.filter((inc) => inc.PendienteReasignacion !== true)
+  }, [allIncidents])
 
-    setPendingReassignment([
-      {
-        Type: 'Ascensor fuera de servicio',
-        UUID: '3',
-        Title: 'Ascensor principal no funciona',
-        Description: 'Ascensor principal no funciona',
-        ResponsibleArea: [user?.Area || 'Infraestructura y mantenimiento'],
-        CreatedById: 'user3',
-        CreatedByName: 'Carlos López',
-        Status: 'PENDIENTE',
-        Priority: 'CRÍTICO',
-        IsGlobal: true,
-        CreatedAt: '2024-11-14T14:20:00Z',
-        LocationTower: 'Torre C',
-        LocationFloor: 'Todos',
-        LocationArea: 'Ascensor',
-        Reference: 'REF-003',
-        PendienteReasignacion: true,
-        Comment: [],
-      },
-    ])
-  }, [user])
+  // Calcular estadísticas
+  const stats = useMemo(() => {
+    return {
+      total: allIncidents.length,
+      pending: allIncidents.filter((i) => i.Status === 'PENDIENTE').length,
+      inProgress: allIncidents.filter((i) => i.Status === 'EN_ATENCION').length,
+      resolved: allIncidents.filter((i) => i.Status === 'RESUELTO').length,
+      pendingReassignment: pendingReassignment.length,
+    }
+  }, [allIncidents, pendingReassignment.length])
 
-  const stats = {
-    total: incidents.length,
-    pending: incidents.filter((i) => i.Status === 'PENDIENTE').length,
-    inProgress: incidents.filter((i) => i.Status === 'EN_ATENCION').length,
-    resolved: incidents.filter((i) => i.Status === 'RESUELTO').length,
-    pendingReassignment: pendingReassignment.length,
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-50">
@@ -167,7 +116,14 @@ export default function CoordinatorDashboard() {
         </div>
 
         {/* Pending Reassignment */}
-        {pendingReassignment.length > 0 && (
+        {loading ? (
+          <div className="card mb-8 animate-slide-up" style={{ animationDelay: '0.6s' }}>
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
+              <p className="text-gray-600">Cargando incidentes...</p>
+            </div>
+          </div>
+        ) : pendingReassignment.length > 0 ? (
           <div className="card mb-8 animate-slide-up border-l-4 border-orange-500" style={{ animationDelay: '0.6s' }}>
             <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center">
               <UserPlus className="h-6 w-6 mr-3 text-orange-600" />
@@ -209,7 +165,7 @@ export default function CoordinatorDashboard() {
               ))}
             </div>
           </div>
-        )}
+        ) : null}
 
         {/* Area Incidents */}
         <div className="card animate-slide-up" style={{ animationDelay: '0.7s' }}>
@@ -218,7 +174,12 @@ export default function CoordinatorDashboard() {
             Incidentes del Área ({user?.Area})
           </h2>
           <div className="space-y-4">
-            {incidents.length === 0 ? (
+            {loading ? (
+              <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
+                <p className="text-gray-600">Cargando incidentes...</p>
+              </div>
+            ) : incidents.length === 0 ? (
               <div className="text-center py-12">
                 <AlertTriangle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                 <p className="text-gray-600">No hay incidentes en tu área</p>

@@ -1,92 +1,31 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Navbar from '@/components/Navbar'
 import { AlertTriangle, Clock, CheckCircle, Search, Filter, Eye, Edit, X } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { Incident } from '@/types'
 import { useRouter } from 'next/navigation'
+import { useIncidents } from '@/hooks/useIncidents'
+import { useUser } from '@/contexts/UserContext'
 
 export default function MyReportsPage() {
   const router = useRouter()
-  const [incidents, setIncidents] = useState<Incident[]>([])
-  const [filteredIncidents, setFilteredIncidents] = useState<Incident[]>([])
+  const { user } = useUser()
+  const { incidents: allIncidents, loading, error } = useIncidents()
+  
+  // Filtrar solo los incidentes del usuario actual
+  const incidents = useMemo(() => {
+    if (!user?.UUID) return []
+    return allIncidents.filter((incident) => incident.CreatedById === user.UUID)
+  }, [allIncidents, user?.UUID])
+  
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
 
-  useEffect(() => {
-    // Simulación de datos - aquí iría la llamada a la API
-    const mockIncidents: Incident[] = [
-      {
-        Type: 'Infraestructura y mantenimiento',
-        UUID: '1',
-        Title: 'Fuga de agua en el baño del segundo piso',
-        Description: 'Fuga de agua en el baño del segundo piso',
-        ResponsibleArea: ['Infraestructura y mantenimiento'],
-        CreatedById: 'user1',
-        CreatedByName: 'Juan Pérez',
-        Status: 'PENDIENTE',
-        Priority: 'ALTA',
-        IsGlobal: false,
-        CreatedAt: '2024-11-15T10:30:00Z',
-        LocationTower: 'Torre A',
-        LocationFloor: 'Piso 2',
-        LocationArea: 'Baño',
-        Reference: 'REF-001',
-        PendienteReasignacion: false,
-        Comment: [],
-        Subtype: 'Servicios higiénicos inoperativos',
-      },
-      {
-        Type: 'Luz dañada',
-        UUID: '2',
-        Title: 'Lámpara fundida en el pasillo principal',
-        Description: 'Lámpara fundida en el pasillo principal',
-        ResponsibleArea: ['Infraestructura y mantenimiento'],
-        CreatedById: 'user2',
-        CreatedByName: 'María García',
-        Status: 'EN_ATENCION',
-        Priority: 'MEDIA',
-        IsGlobal: false,
-        CreatedAt: '2024-11-15T09:15:00Z',
-        ExecutingAt: '2024-11-15T10:00:00Z',
-        LocationTower: 'Torre B',
-        LocationFloor: 'Piso 1',
-        LocationArea: 'Pasillo',
-        Reference: 'REF-002',
-        AssignedToPersonalId: 'personal1',
-        PendienteReasignacion: false,
-        Comment: [],
-      },
-      {
-        Type: 'Ascensor fuera de servicio',
-        UUID: '3',
-        Title: 'Ascensor principal no funciona',
-        Description: 'Ascensor principal no funciona',
-        ResponsibleArea: ['Infraestructura y mantenimiento'],
-        CreatedById: 'user3',
-        CreatedByName: 'Carlos López',
-        Status: 'RESUELTO',
-        Priority: 'ALTA',
-        IsGlobal: true,
-        CreatedAt: '2024-11-14T14:20:00Z',
-        ExecutingAt: '2024-11-14T15:00:00Z',
-        ResolvedAt: '2024-11-15T08:00:00Z',
-        LocationTower: 'Torre C',
-        LocationFloor: 'Todos',
-        LocationArea: 'Ascensor',
-        Reference: 'REF-003',
-        AssignedToPersonalId: 'personal2',
-        PendienteReasignacion: false,
-        Comment: [],
-      },
-    ]
-    setIncidents(mockIncidents)
-    setFilteredIncidents(mockIncidents)
-  }, [])
-
-  useEffect(() => {
+  // Filtrar incidentes según búsqueda y estado
+  const filteredIncidents = useMemo(() => {
     let filtered = incidents
 
     if (searchTerm) {
@@ -104,14 +43,14 @@ export default function MyReportsPage() {
       filtered = filtered.filter((incident) => incident.Status === statusFilter.toUpperCase())
     }
 
-    setFilteredIncidents(filtered)
+    return filtered
   }, [searchTerm, statusFilter, incidents])
 
   const handleCancelIncident = async (uuid: string) => {
     if (confirm('¿Estás seguro de que deseas cancelar este incidente?')) {
-      // Aquí iría la llamada a la API para cancelar
-      setIncidents(incidents.filter((inc) => inc.UUID !== uuid))
-      alert('Incidente cancelado exitosamente')
+      // TODO: Implementar cancelación de incidente vía WebSocket o API
+      // Por ahora solo muestra un mensaje
+      alert('Funcionalidad de cancelación pendiente de implementar')
     }
   }
 
@@ -327,7 +266,18 @@ export default function MyReportsPage() {
 
         {/* Incidents List */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filteredIncidents.length === 0 ? (
+          {loading ? (
+            <div className="col-span-2 card text-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-utec-secondary mx-auto mb-4"></div>
+              <p className="text-gray-600">Cargando incidentes...</p>
+            </div>
+          ) : error ? (
+            <div className="col-span-2 card text-center py-12">
+              <AlertTriangle className="h-12 w-12 text-red-400 mx-auto mb-4" />
+              <p className="text-red-600 mb-2">Error al cargar los incidentes</p>
+              <p className="text-sm text-gray-500">{error}</p>
+            </div>
+          ) : filteredIncidents.length === 0 ? (
             <div className="col-span-2 card text-center py-12">
               <AlertTriangle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <p className="text-gray-600">No se encontraron reportes</p>

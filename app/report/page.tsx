@@ -5,9 +5,13 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Navbar from '@/components/Navbar'
 import { AlertTriangle, ArrowLeft, ArrowRight, Camera, Shield, Sparkles, Wrench, FlaskConical, Monitor, CheckCircle2, X, FileText, Bell } from 'lucide-react'
+import { useUser } from '@/contexts/UserContext'
+import { publishIncident } from '@/lib/websocket-events'
+import { wsClient } from '@/lib/websocket'
 
 interface IncidentSubtype {
   name: string
+  code: number // Código numérico del subtipo
   priority: 'BAJO' | 'MEDIA' | 'ALTA' | 'CRÍTICO'
   image?: string // Imagen opcional para el subtipo
   notifyAreas?: string[] // Solo para referencia interna, no se muestra
@@ -24,6 +28,7 @@ interface IncidentCategory {
 
 export default function ReportPage() {
   const router = useRouter()
+  const { user } = useUser()
   const [step, setStep] = useState(1)
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [selectedSubtype, setSelectedSubtype] = useState<IncidentSubtype | null>(null)
@@ -38,6 +43,7 @@ export default function ReportPage() {
   const [files, setFiles] = useState<File[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isReported, setIsReported] = useState(false)
+  const [error, setError] = useState<string>('')
 
   const categories: IncidentCategory[] = [
     {
@@ -49,28 +55,33 @@ export default function ReportPage() {
       subtypes: [
         {
           name: 'Convivencia',
+          code: 10,
           priority: 'CRÍTICO',
           image: '/convivencia.jpg',
           notifyAreas: ['Bienestar', 'Servicio médico/Tópico'],
         },
         {
           name: 'Robos',
+          code: 11,
           priority: 'ALTA',
           image: '/robos.jpeg',
         },
         {
           name: 'Pérdidas',
+          code: 12,
           priority: 'MEDIA',
           image: '/perdidas.jpg',
         },
         {
           name: 'Intento de atentar contra la integridad personal',
+          code: 13,
           priority: 'CRÍTICO',
           image: '/intento-integridad.webp',
           notifyAreas: ['Bienestar', 'Servicio médico/Tópico'],
         },
         {
           name: 'Accidentes',
+          code: 14,
           priority: 'CRÍTICO',
           image: '/accidentes.webp',
           notifyAreas: ['Bienestar', 'Servicio médico/Tópico', 'Infraestructura y mantenimiento'],
@@ -86,11 +97,13 @@ export default function ReportPage() {
       subtypes: [
         {
           name: 'Área sucia o desordenada',
+          code: 21,
           priority: 'MEDIA',
           image: '/area-sucia.jpeg',
         },
         {
           name: 'Falta de suministros de limpieza',
+          code: 22,
           priority: 'BAJO',
           image: '/falta-insumos.jpg',
         },
@@ -105,21 +118,25 @@ export default function ReportPage() {
       subtypes: [
         {
           name: 'Servicios higiénicos inoperativos',
+          code: 31,
           priority: 'MEDIA',
           image: '/servicios-inoperativos.jpg',
         },
         {
           name: 'Salidas de emergencia',
+          code: 32,
           priority: 'MEDIA',
           image: '/salida-emergencia.webp',
         },
         {
           name: 'Mobiliario en mal estado',
+          code: 33,
           priority: 'MEDIA',
           image: '/mobiliario-mal-estado.webp',
         },
         {
           name: 'Estructura dañada',
+          code: 34,
           priority: 'MEDIA',
           image: '/estructura-danada.png',
         },
@@ -134,31 +151,37 @@ export default function ReportPage() {
       subtypes: [
         {
           name: 'Máquinas malogradas o fuera de servicio',
+          code: 41,
           priority: 'ALTA',
           image: '/maquinas-malogradas.jpg',
         },
         {
           name: 'Falta de EPP',
+          code: 42,
           priority: 'BAJO',
           image: '/falta-epp.webp',
         },
         {
           name: 'Derrames de sustancias peligrosas',
+          code: 43,
           priority: 'CRÍTICO',
           image: '/derrame-quimico.jpg',
         },
         {
           name: 'Incumplimiento de normas de seguridad',
+          code: 44,
           priority: 'BAJO',
           image: '/incumplimiento-normas.jpg',
         },
         {
           name: 'Incidentes eléctricos',
+          code: 45,
           priority: 'ALTA',
           image: '/incidente-electrico.webp',
         },
         {
           name: 'Acceso no autorizado',
+          code: 46,
           priority: 'MEDIA',
           image: '/acceso-no-autorizado.jpg',
         },
@@ -173,16 +196,19 @@ export default function ReportPage() {
       subtypes: [
         {
           name: 'Internet caído',
+          code: 51,
           priority: 'BAJO',
           image: '/internet-caido.jpg',
         },
         {
           name: 'Fallas en sistemas institucionales',
+          code: 52,
           priority: 'BAJO',
           image: '/sistemas-fallando.jpg',
         },
         {
           name: 'Equipos en aulas',
+          code: 53,
           priority: 'MEDIA',
           image: '/equipos-aulas.jpg',
         },
@@ -229,12 +255,58 @@ export default function ReportPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
+    setError('')
 
-    // Simulación de envío - aquí iría la llamada a la API
-    setTimeout(() => {
+    // Validar que el usuario esté autenticado
+    if (!user || !user.UUID) {
+      setError('Debes estar autenticado para reportar un incidente')
+      setIsSubmitting(false)
+      return
+    }
+
+    // Validar que el WebSocket esté conectado
+    if (!wsClient.isConnected()) {
+      setError('No hay conexión con el servidor. Por favor, recarga la página e intenta nuevamente.')
+      setIsSubmitting(false)
+      return
+    }
+
+    // Validar que se haya seleccionado un subtipo con código
+    if (!selectedSubtype || !selectedSubtype.code) {
+      setError('Debes seleccionar un tipo de incidente válido')
+      setIsSubmitting(false)
+      return
+    }
+
+    try {
+      console.log('📝 [Report] Preparando datos del incidente...')
+      
+      // Enviar el incidente usando el formato exacto del JSON especificado
+      publishIncident({
+        tenant_id: selectedCategory || '',
+        CreatedById: user.UUID,
+        CreatedByName: user.FullName,
+        subType: selectedSubtype.code,
+        Title: formData.title,
+        Description: formData.description,
+        LocationTower: formData.tower,
+        LocationFloor: formData.floor,
+        LocationArea: formData.room,
+        Reference: formData.reference || '',
+      })
+      
+      console.log('✅ [Report] Incidente enviado exitosamente')
+      
+      // Esperar un momento para que el servidor procese
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
       setIsSubmitting(false)
       setIsReported(true)
-    }, 1500)
+    } catch (error) {
+      console.error('❌ [Report] Error al enviar incidente:', error)
+      setError(error instanceof Error ? error.message : 'Error al enviar el incidente. Por favor intenta nuevamente.')
+      setIsSubmitting(false)
+    }
   }
 
   const currentCategory = categories.find((cat) => cat.name === selectedCategory)
@@ -464,6 +536,16 @@ export default function ReportPage() {
             </div>
 
             <form onSubmit={handleSubmit}>
+              {/* Mensaje de error */}
+              {error && (
+                <div className="mx-6 mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-center space-x-2">
+                    <AlertTriangle className="h-5 w-5 text-red-600" />
+                    <p className="text-sm text-red-600">{error}</p>
+                  </div>
+                </div>
+              )}
+              
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 px-6 pb-6">
                 {/* Main Form - Left Column */}
                 <div className="lg:col-span-2 space-y-6">
