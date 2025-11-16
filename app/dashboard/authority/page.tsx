@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import Navbar from '@/components/Navbar'
-import Map from '@/components/Map'
 import { AlertTriangle, Clock, CheckCircle, TrendingUp, MapPin, Shield, BarChart3, Users, FileText, Download } from 'lucide-react'
 import Link from 'next/link'
 import { Incident } from '@/types'
 import { useUser } from '@/contexts/UserContext'
+
+const Map = dynamic(() => import('@/components/Map'), { ssr: false })
 
 export default function AuthorityDashboard() {
   const { user } = useUser()

@@ -202,7 +202,7 @@ export default function CommunityDashboard() {
                 <div className="absolute left-0 top-0 bottom-0 w-1 bg-utec-secondary"></div>
                 <div className="pl-4 pr-3 py-3.5">
                   <p className="text-sm font-bold text-gray-900 mb-0.5">Estado actualizado</p>
-                  <p className="text-xs text-gray-600 leading-relaxed">Tu incidente cambió a "En Atención"</p>
+                  <p className="text-xs text-gray-600 leading-relaxed">Tu incidente cambió a &quot;En Atención&quot;</p>
                 </div>
               </div>
               <div className="relative bg-gray-100 rounded-md overflow-hidden hover:bg-gray-50 transition-colors">
