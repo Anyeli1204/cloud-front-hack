@@ -11,10 +11,10 @@ import { wsClient } from '@/lib/websocket'
 
 interface IncidentSubtype {
   name: string
-  code: number // Código numérico del subtipo
+  code: number
   priority: 'BAJO' | 'MEDIA' | 'ALTA' | 'CRÍTICO'
-  image?: string // Imagen opcional para el subtipo
-  notifyAreas?: string[] // Solo para referencia interna, no se muestra
+  image?: string
+  notifyAreas?: string[]
 }
 
 interface IncidentCategory {
@@ -257,21 +257,18 @@ export default function ReportPage() {
     setIsSubmitting(true)
     setError('')
 
-    // Validar que el usuario esté autenticado
     if (!user || !user.UUID) {
       setError('Debes estar autenticado para reportar un incidente')
       setIsSubmitting(false)
       return
     }
 
-    // Validar que el WebSocket esté conectado
     if (!wsClient.isConnected()) {
       setError('No hay conexión con el servidor. Por favor, recarga la página e intenta nuevamente.')
       setIsSubmitting(false)
       return
     }
 
-    // Validar que se haya seleccionado un subtipo con código
     if (!selectedSubtype || !selectedSubtype.code) {
       setError('Debes seleccionar un tipo de incidente válido')
       setIsSubmitting(false)
@@ -279,9 +276,6 @@ export default function ReportPage() {
     }
 
     try {
-      console.log('📝 [Report] Preparando datos del incidente...')
-      
-      // Enviar el incidente usando el formato exacto del JSON especificado
       publishIncident({
         tenant_id: selectedCategory || '',
         CreatedById: user.UUID,
@@ -295,15 +289,11 @@ export default function ReportPage() {
         Reference: formData.reference || '',
       })
       
-      console.log('✅ [Report] Incidente enviado exitosamente')
-      
-      // Esperar un momento para que el servidor procese
       await new Promise(resolve => setTimeout(resolve, 500))
       
       setIsSubmitting(false)
       setIsReported(true)
     } catch (error) {
-      console.error('❌ [Report] Error al enviar incidente:', error)
       setError(error instanceof Error ? error.message : 'Error al enviar el incidente. Por favor intenta nuevamente.')
       setIsSubmitting(false)
     }
@@ -311,7 +301,6 @@ export default function ReportPage() {
 
   const currentCategory = categories.find((cat) => cat.name === selectedCategory)
 
-  // Success Screen
   if (isReported) {
     return (
       <div className="min-h-screen bg-utec-gray">
@@ -362,7 +351,6 @@ export default function ReportPage() {
       <Navbar />
 
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Progress Indicator */}
         <div className="mb-8">
           <div className="flex items-center justify-center mb-4">
             <div className="flex items-center space-x-2">
@@ -400,7 +388,6 @@ export default function ReportPage() {
           </div>
         </div>
 
-        {/* Step 1: Category Selection */}
         {step === 1 && (
           <div className="card animate-fade-in">
             <div className="mb-6">
@@ -424,7 +411,6 @@ export default function ReportPage() {
                       e.currentTarget.style.boxShadow = 'none'
                     }}
                   >
-                    {/* Imagen de fondo */}
                     <div className="relative flex-1 min-h-[240px] md:min-h-[280px] lg:min-h-[320px]">
                       <Image
                         src={category.image}
@@ -435,7 +421,6 @@ export default function ReportPage() {
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/50 to-black/30"></div>
                       
-                      {/* Contenido superior */}
                       <div className="absolute top-4 left-4 right-4">
                         <div className={`w-12 h-12 rounded-lg bg-gradient-to-br ${category.color} flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-lg mb-3`}>
                           <Icon className="h-6 w-6 text-white" />
@@ -448,7 +433,6 @@ export default function ReportPage() {
                       </div>
                     </div>
                     
-                    {/* Pie de página con descripción */}
                     <div className="bg-gradient-to-br from-gray-100 to-gray-200 p-4 h-20 flex items-center justify-center">
                       <p className="text-xs md:text-sm text-gray-700 leading-relaxed text-center font-medium">
                         {category.description}
@@ -461,7 +445,6 @@ export default function ReportPage() {
           </div>
         )}
 
-        {/* Step 2: Subtype Selection */}
         {step === 2 && currentCategory && (
           <div className="card animate-fade-in p-0">
             <div className="mb-6 px-6 pt-6">
@@ -488,7 +471,6 @@ export default function ReportPage() {
                   className="group relative overflow-hidden rounded-xl transition-all duration-300 transform hover:-translate-y-1 hover:shadow-xl flex-shrink-0"
                   style={{ width: '240px', height: '320px' }}
                 >
-                  {/* Imagen de fondo */}
                   {subtype.image && (
                     <div className="relative w-full h-full">
                       <Image
@@ -499,7 +481,6 @@ export default function ReportPage() {
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/50 to-black/30"></div>
                       
-                      {/* Título y estado sobre la imagen */}
                       <div className="absolute bottom-4 left-4 right-4">
                         <h3 className="text-sm md:text-base font-bold text-white leading-tight drop-shadow-lg mb-2" style={{ textShadow: '2px 2px 8px rgba(0,0,0,0.8), 0 0 10px rgba(0,0,0,0.5)' }}>
                           {subtype.name}
@@ -516,7 +497,6 @@ export default function ReportPage() {
           </div>
         )}
 
-        {/* Step 3: Details Form */}
         {step === 3 && selectedSubtype && currentCategory && (
           <div className="card animate-fade-in p-0">
             <div className="mb-6 px-6 pt-6">
@@ -536,7 +516,6 @@ export default function ReportPage() {
             </div>
 
             <form onSubmit={handleSubmit}>
-              {/* Mensaje de error */}
               {error && (
                 <div className="mx-6 mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
                   <div className="flex items-center space-x-2">
@@ -547,9 +526,7 @@ export default function ReportPage() {
               )}
               
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 px-6 pb-6">
-                {/* Main Form - Left Column */}
                 <div className="lg:col-span-2 space-y-6">
-                  {/* Type and Priority Display */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-gray-500 mb-2">TIPO</label>
@@ -573,7 +550,6 @@ export default function ReportPage() {
                     </div>
                   </div>
 
-                  {/* Title */}
                   <div>
                     <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-2">
                       TÍTULO <span className="text-red-500">*</span>
@@ -589,7 +565,6 @@ export default function ReportPage() {
                     />
                   </div>
 
-                  {/* Description */}
                   <div>
                     <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
                       DESCRIPCIÓN <span className="text-red-500">*</span>
@@ -605,7 +580,6 @@ export default function ReportPage() {
                     />
                   </div>
 
-                  {/* Location Fields */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       UBICACIÓN <span className="text-red-500">*</span>
@@ -641,7 +615,6 @@ export default function ReportPage() {
                     </div>
                   </div>
 
-                  {/* Reference */}
                   <div>
                     <label htmlFor="reference" className="block text-sm font-medium text-gray-700 mb-2">
                       REFERENCIA
@@ -657,9 +630,7 @@ export default function ReportPage() {
                   </div>
                 </div>
 
-                {/* Sidebar - Right Column */}
                 <div className="lg:col-span-1 space-y-6">
-                  {/* Photo Upload */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Adjuntar Foto
@@ -700,7 +671,6 @@ export default function ReportPage() {
                     )}
                   </div>
 
-                  {/* Info Summary */}
                   <div className="bg-gray-50 rounded-xl p-4">
                     <h3 className="text-sm font-semibold text-gray-900 mb-4">Resumen del Reporte</h3>
                     <div className="space-y-3 text-sm">
@@ -733,7 +703,6 @@ export default function ReportPage() {
                     </div>
                   </div>
 
-                  {/* Action Buttons */}
                   <div className="space-y-3 pt-4 border-t">
                     <button
                       type="button"

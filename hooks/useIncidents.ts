@@ -6,7 +6,6 @@ import { authenticatedFetch } from '@/lib/auth'
 import { wsClient } from '@/lib/websocket'
 import { useUser } from '@/contexts/UserContext'
 
-// Mapear el formato del backend al formato del frontend
 function mapBackendIncidentToFrontend(backendIncident: any): Incident {
   return {
     Type: backendIncident.tenant_id || backendIncident.Type || '',
@@ -72,13 +71,14 @@ export function useIncidents(filters?: {
   global?: boolean
   tenant_id?: string
   type?: string
+  minWaitMinutes?: number
+  maxWaitMinutes?: number
 }) {
   const { user } = useUser()
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Función para obtener incidentes desde el endpoint REST
   const fetchIncidents = useCallback(async () => {
     try {
       setLoading(true)
@@ -92,7 +92,6 @@ export function useIncidents(filters?: {
 
       const incidentsUrl = process.env.NEXT_PUBLIC_LAMBDA_INCIDENTS_URL!
       
-      // Construir query params según los filtros
       const queryParams = new URLSearchParams()
       if (filters?.status) queryParams.append('status', filters.status)
       if (filters?.priority) queryParams.append('priority', filters.priority)
@@ -100,12 +99,12 @@ export function useIncidents(filters?: {
       if (filters?.global !== undefined) queryParams.append('global', filters.global.toString())
       if (filters?.tenant_id) queryParams.append('tenant_id', filters.tenant_id)
       if (filters?.type) queryParams.append('type', filters.type)
+      if (filters?.minWaitMinutes !== undefined) queryParams.append('minWaitMinutes', filters.minWaitMinutes.toString())
+      if (filters?.maxWaitMinutes !== undefined) queryParams.append('maxWaitMinutes', filters.maxWaitMinutes.toString())
 
       const url = queryParams.toString() 
         ? `${incidentsUrl}?${queryParams.toString()}`
         : incidentsUrl
-
-      console.log('📡 [useIncidents] Obteniendo incidentes desde REST API:', url)
 
       const response = await authenticatedFetch(url, {
         method: 'GET',
@@ -118,119 +117,87 @@ export function useIncidents(filters?: {
       const data = await response.json()
       const backendIncidents = Array.isArray(data) ? data : []
 
-      console.log(`✅ [useIncidents] ${backendIncidents.length} incidentes obtenidos desde REST API`)
-
       const mappedIncidents = backendIncidents.map(mapBackendIncidentToFrontend)
       setIncidents(mappedIncidents)
     } catch (err) {
-      console.error('❌ [useIncidents] Error al obtener incidentes:', err)
       setError(err instanceof Error ? err.message : 'Error al obtener incidentes')
     } finally {
       setLoading(false)
     }
   }, [filters, user])
 
-  // Cargar incidentes iniciales al montar el componente
   useEffect(() => {
     if (user) {
       fetchIncidents()
     }
   }, [user, fetchIncidents])
 
-  // Suscribirse a actualizaciones del WebSocket
   useEffect(() => {
     if (!wsClient.isConnected() || !user) {
-      console.log('⚠️ [useIncidents] WebSocket no está conectado o no hay usuario')
       return
     }
 
-    console.log('👂 [useIncidents] Suscribiéndose a eventos del WebSocket...')
-
-    // Handler para nuevo incidente
     const handleNewIncident = (data: any) => {
-      console.log('📨 [useIncidents] Nuevo incidente recibido:', data)
-      
-      // El backend puede enviar el incidente de diferentes formas:
-      // 1. Directamente: { action: 'NewIncident', Title: '...', ... }
-      // 2. Dentro de data: { action: 'NewIncident', data: { Title: '...', ... } }
-      // 3. Como incident: { action: 'NewIncident', incident: { Title: '...', ... } }
       const incident = data.incident || data.data || data
       
-      // Verificar que tenga los campos mínimos necesarios
       if (!incident || (!incident.UUID && !incident.uuid && !incident.Title)) {
-        console.log('⚠️ [useIncidents] Datos de incidente inválidos, ignorando')
         return
       }
       
       const mappedIncident = mapBackendIncidentToFrontend(incident)
       
-      // Verificar si el incidente ya existe (evitar duplicados)
       setIncidents((prev) => {
         const exists = prev.some((inc) => inc.UUID === mappedIncident.UUID)
         if (exists) {
-          console.log('⚠️ [useIncidents] Incidente ya existe, actualizando en lugar de agregar')
           return prev.map((inc) => (inc.UUID === mappedIncident.UUID ? mappedIncident : inc))
         }
         
-        // Filtrar según el rol del usuario antes de agregar
         if (user?.Role === 'COORDINATOR' && user?.Area) {
           const belongsToArea = mappedIncident.ResponsibleArea.includes(user.Area)
           if (!belongsToArea) {
-            console.log('⚠️ [useIncidents] Incidente no pertenece al área del coordinador')
             return prev
           }
         } else if (user?.Role === 'COMMUNITY') {
           const isOwnIncident = mappedIncident.CreatedById === user.UUID
           const isGlobal = mappedIncident.IsGlobal
           if (!isOwnIncident && !isGlobal) {
-            console.log('⚠️ [useIncidents] Incidente no pertenece al usuario')
             return prev
           }
         } else if (user?.Role === 'PERSONAL') {
           const belongsToArea = mappedIncident.ResponsibleArea.includes(user.Area || '')
           const isAssigned = mappedIncident.AssignedToPersonalId === user.UUID
           if (!belongsToArea && !isAssigned) {
-            console.log('⚠️ [useIncidents] Incidente no pertenece al área ni está asignado')
             return prev
           }
         }
         
-        // Agregar el nuevo incidente al inicio de la lista
-        console.log('✅ [useIncidents] Agregando nuevo incidente a la lista')
         return [mappedIncident, ...prev]
       })
     }
 
-    // Handler para incidente editado
     const handleEditIncident = (data: any) => {
-      console.log('📝 [useIncidents] Incidente editado recibido:', data)
-      const incident = data.incident || data
+      const incident = data.incident || data.data || data
       const mappedIncident = mapBackendIncidentToFrontend(incident)
       setIncidents((prev) =>
         prev.map((inc) => (inc.UUID === mappedIncident.UUID ? mappedIncident : inc))
       )
     }
 
-    // Handler para incidente eliminado
     const handleDeleteIncident = (data: any) => {
-      console.log('🗑️ [useIncidents] Incidente eliminado recibido:', data)
       const uuid = data.uuid || data.UUID
       if (uuid) {
         setIncidents((prev) => prev.filter((inc) => inc.UUID !== uuid))
       }
     }
 
-    // Suscribirse a los eventos
-    // Escuchar tanto 'NewIncident' como 'PublishIncident' por si el backend envía diferentes nombres
     wsClient.on('NewIncident', handleNewIncident)
-    wsClient.on('PublishIncident', handleNewIncident) // También escuchar cuando se publica un incidente
+    wsClient.on('PublishIncident', handleNewIncident)
     wsClient.on('EditIncidentContent', handleEditIncident)
     wsClient.on('IncidentDeleted', handleDeleteIncident)
     wsClient.on('StaffChooseIncident', handleEditIncident)
     wsClient.on('CoordinatorAssignIncident', handleEditIncident)
     wsClient.on('SolvedIncident', handleEditIncident)
 
-    // Cleanup
     return () => {
       wsClient.off('NewIncident', handleNewIncident)
       wsClient.off('PublishIncident', handleNewIncident)
@@ -242,7 +209,6 @@ export function useIncidents(filters?: {
     }
   }, [user])
 
-  // Función para refrescar manualmente
   const refresh = useCallback(() => {
     fetchIncidents()
   }, [fetchIncidents])
@@ -254,4 +220,3 @@ export function useIncidents(filters?: {
     refresh,
   }
 }
-

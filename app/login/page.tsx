@@ -9,7 +9,6 @@ import { User } from '@/types'
 import { saveToken, authenticatedFetch } from '@/lib/auth'
 import Image from 'next/image'
 
-// URL del lambda
 const LAMBDA_LOGIN_URL = process.env.NEXT_PUBLIC_LAMBDA_LOGIN_URL!
 const LAMBDA_USERS_URL = process.env.NEXT_PUBLIC_LAMBDA_USERS_URL!
 
@@ -30,7 +29,6 @@ export default function LoginPage() {
     setLoading(true)
     
     try {
-      // Llamada al lambda
       const response = await fetch(LAMBDA_LOGIN_URL, {
         method: 'POST',
         headers: {
@@ -49,34 +47,26 @@ export default function LoginPage() {
 
       const data = await response.json()
       
-      // Guardar el token
       if (data.token && data.expiresAt) {
         saveToken({
           token: data.token,
           expiresAt: data.expiresAt,
         })
-        console.log('✅ [Login] Token guardado')
 
-        // Conectar al WebSocket después del login
-        console.log('🔌 [Login] Conectando WebSocket después del login...')
         try {
           const { wsClient } = await import('@/lib/websocket')
           await wsClient.connect()
-          console.log('✅ [Login] WebSocket conectado exitosamente')
         } catch (error) {
-          console.error('❌ [Login] Error al conectar WebSocket:', error)
         }
 
-            // Obtener datos del usuario usando el token
-            try {
-              const userResponse = await authenticatedFetch(LAMBDA_USERS_URL, {
-                method: 'GET',
-              })
+        try {
+          const userResponse = await authenticatedFetch(LAMBDA_USERS_URL, {
+            method: 'GET',
+          })
 
           if (userResponse.ok) {
             const userData = await userResponse.json()
             
-            // Mapear la respuesta al formato User
             const user: User = {
               Role: userData.Role,
               UUID: userData.UUID,
@@ -91,7 +81,6 @@ export default function LoginPage() {
             }
             setUser(user)
           } else {
-            // Si falla obtener el usuario, crear uno básico
             const defaultUser: User = {
               Role: 'COMMUNITY',
               UUID: '',
@@ -104,8 +93,6 @@ export default function LoginPage() {
             setUser(defaultUser)
           }
         } catch (error) {
-          console.error('Error al obtener datos del usuario:', error)
-          // Si falla obtener el usuario, crear uno básico
           const defaultUser: User = {
             Role: 'COMMUNITY',
             UUID: '',
@@ -119,7 +106,6 @@ export default function LoginPage() {
         }
       }
 
-      // Redirigir al dashboard
       router.push('/dashboard')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al iniciar sesión. Por favor verifica tus credenciales.')
@@ -130,7 +116,6 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen relative flex items-center justify-center p-4 overflow-hidden">
-      {/* Imagen de fondo con overlay */}
       <div className="absolute inset-0 z-0">
         <Image
           src="/login-background.jpg"
@@ -141,17 +126,13 @@ export default function LoginPage() {
           quality={100}
         />
         <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/60 to-black/50"></div>
-        {/* Efecto de brillo sutil */}
         <div className="absolute inset-0 bg-gradient-to-br from-utec-secondary/10 via-transparent to-transparent"></div>
       </div>
 
       <div className="w-full max-w-6xl grid md:grid-cols-2 gap-8 items-center relative z-10">
-        {/* Lado Izquierdo - Logo y Bienvenida */}
         <div className="hidden md:flex flex-col items-center justify-center text-white">
           <div className="mb-0 transform hover:scale-105 transition-transform duration-300 relative">
-            {/* Múltiples capas de brillo para efecto de resplandor */}
             <div className="absolute inset-0 flex items-center justify-center">
-              {/* Brillo exterior más difuso */}
               <div 
                 className="absolute w-[800px] h-[280px] animate-glow-pulse"
                 style={{
@@ -164,7 +145,6 @@ export default function LoginPage() {
                   animationDelay: '0s',
                 }}
               ></div>
-              {/* Brillo medio */}
               <div 
                 className="absolute w-[760px] h-[260px] animate-glow-pulse"
                 style={{
@@ -177,7 +157,6 @@ export default function LoginPage() {
                   animationDelay: '0.3s',
                 }}
               ></div>
-              {/* Brillo interior más intenso */}
               <div 
                 className="absolute w-[720px] h-[250px] animate-glow-pulse"
                 style={{
@@ -191,7 +170,6 @@ export default function LoginPage() {
                 }}
               ></div>
             </div>
-            {/* Logo principal con brillo */}
             <div className="relative z-10">
               <Image
                 src="/logo-transparent.png"
@@ -211,19 +189,13 @@ export default function LoginPage() {
           <div className="mt-8 w-24 h-1 bg-gradient-to-r from-transparent via-utec-secondary to-transparent"></div>
         </div>
 
-        {/* Lado Derecho - Formulario de Login */}
         <div className="w-full">
           <div className="bg-white/95 backdrop-blur-lg rounded-3xl shadow-2xl p-10 border border-white/40 relative overflow-hidden">
-            {/* Efecto de brillo sutil en la esquina superior */}
             <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-utec-secondary/15 via-utec-primary/10 to-transparent rounded-full blur-3xl -translate-y-1/3 translate-x-1/3"></div>
-            {/* Efecto de brillo en la esquina inferior izquierda */}
             <div className="absolute bottom-0 left-0 w-72 h-72 bg-gradient-to-tr from-utec-light/10 to-transparent rounded-full blur-2xl translate-y-1/3 -translate-x-1/3"></div>
-            {/* Logo en móvil */}
             <div className="md:hidden flex justify-center mb-6 relative z-10">
               <div className="relative">
-                {/* Múltiples capas de brillo para efecto de resplandor */}
                 <div className="absolute inset-0 flex items-center justify-center">
-                  {/* Brillo exterior más difuso */}
                   <div 
                     className="absolute w-[480px] h-[163px] animate-glow-pulse"
                     style={{
@@ -236,7 +208,6 @@ export default function LoginPage() {
                       animationDelay: '0s',
                     }}
                   ></div>
-                  {/* Brillo medio */}
                   <div 
                     className="absolute w-[450px] h-[153px] animate-glow-pulse"
                     style={{
@@ -249,7 +220,6 @@ export default function LoginPage() {
                       animationDelay: '0.3s',
                     }}
                   ></div>
-                  {/* Brillo interior más intenso */}
                   <div 
                     className="absolute w-[432px] h-[147px] animate-glow-pulse"
                     style={{
@@ -263,7 +233,6 @@ export default function LoginPage() {
                     }}
                   ></div>
                 </div>
-                {/* Logo principal con brillo */}
                 <div className="relative z-10">
                   <Image
                     src="/logo-transparent.png"
