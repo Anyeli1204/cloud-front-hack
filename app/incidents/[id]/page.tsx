@@ -61,6 +61,11 @@ export default function IncidentDetailPage() {
   const [editTitle, setEditTitle] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [notification, setNotification] = useState<{
+    show: boolean
+    type: 'success' | 'error'
+    message: string
+  }>({ show: false, type: 'success', message: '' })
 
   useEffect(() => {
     const fetchIncidentDetails = async () => {
@@ -81,30 +86,16 @@ export default function IncidentDetailPage() {
         // Decodificar el UUID que viene encodado desde la URL
         const uuid = decodeURIComponent(incidentId)
         
-        console.log('🔍 UUID recibido y decodificado:', {
-          incidentIdOriginal: incidentId,
-          uuidDecodificado: uuid,
-          longitud: uuid.length,
-          incluyeHash: uuid.includes('#')
-        })
+
         
         // Intentar obtener el tenant_id del incidente existente en la lista
         existingIncident = allIncidents.find(inc => inc.UUID === uuid)
         let tenantId = existingIncident?.Type || 'Limpieza' // El Type contiene el tenant_id original
         
-        console.log('🔍 Búsqueda en lista local:', {
-          uuid,
-          tenantId,
-          existingIncident: !!existingIncident,
-          totalIncidents: allIncidents.length,
-          primerosUUIDs: allIncidents.slice(0, 3).map(inc => ({ uuid: inc.UUID, type: inc.Type }))
-        })
+
         
         // Si no encontramos el incidente en la lista, intentamos diferentes estrategias
-        if (!existingIncident) {
-          console.warn('⚠️ Incidente no encontrado en la lista local, usando tenant_id por defecto')
-          // Podrías implementar lógica adicional aquí, como extraer del UUID si tiene un patrón
-        }
+
         
         const incidentDetailUrl = process.env.NEXT_PUBLIC_LAMBDA_INCIDENT_ESPECIFIC_URL
         
@@ -116,12 +107,7 @@ export default function IncidentDetailPage() {
         // Construir URL con query parameters según el Lambda
         const url = `${incidentDetailUrl}?tenant_id=${encodeURIComponent(tenantId)}&uuid=${encodeURIComponent(uuid)}`
         
-        console.log('📡 Llamando endpoint:', {
-          url,
-          tenantId,
-          uuid,
-          token: localStorage.getItem('auth_token') ? 'presente' : 'ausente'
-        })
+
         
         // Llamar al endpoint para obtener el incidente específico
         const response = await fetch(url, {
@@ -132,12 +118,7 @@ export default function IncidentDetailPage() {
           },
         })
 
-        console.log('📊 Respuesta del servidor:', {
-          status: response.status,
-          statusText: response.statusText,
-          ok: response.ok,
-          headers: Object.fromEntries(response.headers)
-        })
+
 
         if (!response.ok) {
           let errorText = 'Error desconocido'
@@ -159,15 +140,9 @@ export default function IncidentDetailPage() {
         }
 
         const backendIncident = await response.json()
-        console.log('✅ Datos recibidos:', backendIncident)
+
         
-        // Debug del mapeo de estados
-        console.log('📊 Debug del mapeo de estados:', {
-          statusOriginalBackend: backendIncident.Status,
-          tipoDelStatus: typeof backendIncident.Status,
-          statusMapeado: mapBackendStatusToFrontend(backendIncident.Status),
-          todosLosCamposDelBackend: Object.keys(backendIncident)
-        })
+
         
         // Mapear datos del backend al formato frontend
         const mappedIncident: Incident = {
@@ -205,7 +180,6 @@ export default function IncidentDetailPage() {
         
         // Fallback: usar datos del incidente local si está disponible
         if (existingIncident) {
-          console.log('🔄 Usando datos del incidente local como fallback')
           setIncident(existingIncident)
           setEditTitle(existingIncident.Title)
           setEditDescription(existingIncident.Description)
@@ -220,36 +194,21 @@ export default function IncidentDetailPage() {
     fetchIncidentDetails()
   }, [params.id, user, allIncidents])
 
+  // Función para mostrar notificaciones bonitas
+  const showNotification = (type: 'success' | 'error', message: string) => {
+    setNotification({ show: true, type, message })
+    setTimeout(() => {
+      setNotification({ show: false, type: 'success', message: '' })
+    }, 4000)
+  }
+
   // Verificar si el usuario puede editar este incidente
   const canEdit = incident && user && 
     user.Role === 'COMMUNITY' && 
     incident.CreatedById === user.UUID && 
     incident.Status === 'Pendiente'
 
-  // Debug: Log detallado para verificar permisos de edición
-  console.log('🔐 Verificación DETALLADA de permisos de edición:', {
-    // Condiciones individuales
-    '1_hasIncident': !!incident,
-    '2_hasUser': !!user,
-    '3_userRole': user?.Role,
-    '3_isRoleCommunity': user?.Role === 'COMMUNITY',
-    '4_incidentCreatedBy': incident?.CreatedById,
-    '4_userUUID': user?.UUID,
-    '4_isCreatedByUser': incident?.CreatedById === user?.UUID,
-    '5_incidentStatus': incident?.Status,
-    '5_isStatusPendiente': incident?.Status === 'Pendiente',
-    // Resultado final
-    'RESULTADO_canEdit': canEdit,
-    // Razón de fallo si no puede editar
-    'RAZON_FALLO': !canEdit ? (
-      !incident ? 'No hay incidente' :
-      !user ? 'No hay usuario' :
-      user.Role !== 'COMMUNITY' ? `Rol incorrecto: ${user.Role}` :
-      incident.CreatedById !== user.UUID ? `No es creador: ${incident.CreatedById} vs ${user.UUID}` :
-      incident.Status !== 'Pendiente' ? `Estado incorrecto: ${incident.Status} (esperado: Pendiente)` :
-      'Razón desconocida'
-    ) : 'Puede editar ✅'
-  })
+
 
   const handleStartEdit = () => {
     setIsEditing(true)
@@ -267,7 +226,7 @@ export default function IncidentDetailPage() {
     if (!incident || !user) return
 
     if (!editTitle.trim() || !editDescription.trim()) {
-      alert('El título y la descripción son obligatorios')
+      showNotification('error', '⚠️ El título y la descripción son obligatorios. Por favor, completa todos los campos.')
       return
     }
 
@@ -291,10 +250,10 @@ export default function IncidentDetailPage() {
       } : null)
       
       setIsEditing(false)
-      alert('Incidente editado exitosamente')
+      showNotification('success', '✨ ¡Incidente actualizado exitosamente! Los cambios se han guardado correctamente.')
     } catch (error) {
       console.error('Error al editar incidente:', error)
-      alert('Error al editar el incidente')
+      showNotification('error', '❌ Error al editar el incidente. Por favor, intenta nuevamente.')
     } finally {
       setIsSubmitting(false)
     }
@@ -303,32 +262,38 @@ export default function IncidentDetailPage() {
   const handleCancelIncident = async () => {
     if (!incident || !user) return
 
-    if (!confirm('¿Estás seguro de que deseas ELIMINAR este incidente?\n\n⚠️ Esta acción no se puede deshacer y el incidente será borrado permanentemente.')) {
+    const userConfirmed = window.confirm(
+      `🗑️ ELIMINAR INCIDENTE\n\n` +
+      `¿Estás seguro de que deseas eliminar "${incident.Title}"?\n\n` +
+      `⚠️ ADVERTENCIA: Esta acción NO se puede deshacer.\n` +
+      `El incidente será borrado permanentemente del sistema.\n\n` +
+      `¿Continuar con la eliminación?`
+    )
+    
+    if (!userConfirmed) {
       return
     }
 
     try {
       setIsSubmitting(true)
       
-      // Por ahora usamos la función de autoridad para cerrar/eliminar
-      // TODO: Implementar función específica para eliminar por usuario COMMUNITY
-      const message = {
-        action: 'AuthorityManageIncidents',
+      // Usar editIncidentContent con acción 'Eliminar'
+      await editIncidentContent({
         tenant_id: incident.Type,
         uuid: incident.UUID,
-        actionToDo: 'Eliminar'
-      }
-      
-      // Enviar directamente via WebSocket
-      if (typeof window !== 'undefined') {
-        wsClient.send(message)
-      }
+        actionToDo: 'Eliminar',
+        CreatedById: user.UUID
+      })
 
-      alert('Incidente eliminado exitosamente')
-      router.push('/my-reports')
+      showNotification('success', '🗑️ ¡Incidente eliminado exitosamente! Serás redirigido a tus reportes.')
+      
+      // Esperar un momento para que se vea la notificación antes de redirigir
+      setTimeout(() => {
+        router.push('/my-reports')
+      }, 2000)
     } catch (error) {
       console.error('Error al eliminar incidente:', error)
-      alert('Error al eliminar el incidente')
+      showNotification('error', '❌ Error al eliminar el incidente. Por favor, intenta nuevamente.')
       setIsSubmitting(false)
     }
   }
@@ -517,6 +482,47 @@ export default function IncidentDetailPage() {
     <div className="min-h-screen bg-utec-gray">
       <Navbar />
       
+      {/* Notificación bonita */}
+      {notification.show && (
+        <div className={`fixed top-20 right-4 z-50 max-w-sm w-full transform transition-all duration-500 ease-in-out ${
+          notification.show ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
+        }`}>
+          <div className={`rounded-xl shadow-2xl border-l-4 p-4 ${
+            notification.type === 'success' 
+              ? 'bg-white border-green-500' 
+              : 'bg-white border-red-500'
+          }`}>
+            <div className="flex items-start">
+              <div className={`flex-shrink-0 ${
+                notification.type === 'success' ? 'text-green-500' : 'text-red-500'
+              }`}>
+                {notification.type === 'success' ? (
+                  <CheckCircle className="h-6 w-6" />
+                ) : (
+                  <X className="h-6 w-6" />
+                )}
+              </div>
+              <div className="ml-3 flex-1">
+                <p className={`text-sm font-medium ${
+                  notification.type === 'success' ? 'text-green-800' : 'text-red-800'
+                }`}>
+                  {notification.type === 'success' ? '¡Éxito!' : '¡Error!'}
+                </p>
+                <p className="text-sm text-gray-600 mt-1">
+                  {notification.message}
+                </p>
+              </div>
+              <button
+                onClick={() => setNotification({ show: false, type: 'success', message: '' })}
+                className="ml-2 flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Link
           href="/my-reports"
@@ -618,17 +624,7 @@ export default function IncidentDetailPage() {
           </div>
         </div>
 
-        {/* Debug info - remover en producción */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded text-xs">
-            <strong>🔧 Debug Info:</strong>
-            <br />• Usuario rol: {user?.Role || 'No definido'}
-            <br />• Usuario UUID: {user?.UUID || 'No definido'}
-            <br />• Incidente creado por: {incident?.CreatedById || 'No definido'}
-            <br />• Estado incidente: {incident?.Status || 'No definido'}
-            <br />• Puede editar: {canEdit ? '✅ SÍ' : '❌ NO'}
-          </div>
-        )}
+
 
         {/* Formulario de edición inline */}
         {isEditing && (canEdit || process.env.NODE_ENV === 'development') && (
