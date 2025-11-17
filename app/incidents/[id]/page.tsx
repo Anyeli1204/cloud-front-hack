@@ -301,7 +301,29 @@ export default function IncidentDetailPage() {
 
       try {
         setLoadingPersonal(true)
-        const personalUrl = 'https://687qtzms2l.execute-api.us-east-1.amazonaws.com/personal'
+        
+        // Obtener URL del endpoint desde variables de entorno
+        // Primero intentar variable específica, luego construir desde la base
+        let personalUrl = process.env.NEXT_PUBLIC_LAMBDA_PERSONAL_URL
+        
+        if (!personalUrl) {
+          // Si no hay variable específica, construir desde la URL base de usuarios o incidents
+          const baseUrl = process.env.NEXT_PUBLIC_LAMBDA_USERS_URL || process.env.NEXT_PUBLIC_LAMBDA_INCIDENTS_URL
+          if (!baseUrl) {
+            throw new Error('Variable de entorno NEXT_PUBLIC_LAMBDA_USERS_URL o NEXT_PUBLIC_LAMBDA_INCIDENTS_URL no configurada')
+          }
+          
+          // Construir URL del endpoint /personal basado en la URL base
+          // Si la URL base es https://xxx.execute-api.us-east-1.amazonaws.com/incidents
+          // Entonces /personal sería https://xxx.execute-api.us-east-1.amazonaws.com/personal
+          try {
+            const baseUrlObj = new URL(baseUrl)
+            personalUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}/personal`
+          } catch (urlError) {
+            console.error('❌ Error al construir URL:', urlError)
+            throw new Error(`URL base inválida: ${baseUrl}`)
+          }
+        }
         
         // Construir URL con query parameters: role=PERSONAL y area del coordinador
         const areaParam = encodeURIComponent(user.Area)
@@ -309,14 +331,28 @@ export default function IncidentDetailPage() {
         
         console.log('🔍 [fetchPersonalList] Obteniendo personal desde:', url)
         
+        console.log('🔍 [fetchPersonalList] Token disponible:', !!user, 'Área:', user?.Area)
+        
         const response = await authenticatedFetch(url, {
           method: 'GET',
+        }).catch((fetchError) => {
+          console.error('❌ [fetchPersonalList] Error en fetch:', fetchError)
+          console.error('❌ [fetchPersonalList] Tipo de error:', fetchError instanceof TypeError ? 'TypeError (CORS/Red)' : typeof fetchError)
+          console.error('❌ [fetchPersonalList] Mensaje:', fetchError instanceof Error ? fetchError.message : String(fetchError))
+          throw fetchError
+        })
+
+        console.log('🔍 [fetchPersonalList] Respuesta recibida:', {
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          headers: Object.fromEntries(response.headers.entries())
         })
 
         if (!response.ok) {
           const errorText = await response.text()
           console.error('❌ [fetchPersonalList] Error del servidor:', response.status, errorText)
-          throw new Error(`Error al cargar lista de personal: ${response.status}`)
+          throw new Error(`Error al cargar lista de personal: ${response.status} - ${errorText}`)
         }
 
         const data = await response.json()
@@ -369,7 +405,19 @@ export default function IncidentDetailPage() {
         })))
       } catch (error) {
         console.error('❌ Error al cargar lista de personal:', error)
-        setSuccessMessage('Error al cargar la lista de personal')
+        console.error('❌ Detalles del error:', {
+          message: error instanceof Error ? error.message : String(error),
+          name: error instanceof Error ? error.name : 'Unknown',
+          stack: error instanceof Error ? error.stack : undefined
+        })
+        
+        // Mostrar mensaje más específico según el tipo de error
+        if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+          console.error('❌ Error de conexión: El backend no está disponible o hay problema de CORS')
+          setSuccessMessage('Error de conexión: No se pudo conectar con el servidor. Verifica que el endpoint esté disponible.')
+        } else {
+          setSuccessMessage(`Error al cargar la lista de personal: ${error instanceof Error ? error.message : 'Error desconocido'}`)
+        }
         setShowSuccessAlert(true)
       } finally {
         setLoadingPersonal(false)
