@@ -9,75 +9,371 @@ import Link from 'next/link'
 import { Incident } from '@/types'
 import { useUser } from '@/contexts/UserContext'
 import { format } from 'date-fns'
+import { wsClient } from '@/lib/websocket'
 
 function PersonalDashboardContent() {
   const { user } = useUser()
   const [assignedIncidents, setAssignedIncidents] = useState<Incident[]>([])
   const [areaIncidents, setAreaIncidents] = useState<Incident[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string>('')
+
+  // Función para obtener información del usuario incluyendo ToList
+  const fetchUserInfo = async () => {
+    try {
+      const token = localStorage.getItem('auth_token')
+      if (!token) {
+        console.error('No hay token de autenticación')
+        return null
+      }
+
+      const whoamiUrl = process.env.NEXT_PUBLIC_LAMBDA_WHOAMI_URL || 'https://687qtzms2l.execute-api.us-east-1.amazonaws.com/whoami'
+      
+      const response = await fetch(whoamiUrl, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error(`Error al obtener información del usuario: ${response.status}`)
+      }
+
+      const userInfo = await response.json()
+      console.log('👤 PERSONAL - Información del usuario obtenida:', userInfo)
+      return userInfo
+    } catch (error) {
+      console.error('❌ Error al obtener información del usuario:', error)
+      return null
+    }
+  }
+
+  // Función para obtener detalles de incidentes desde ToList
+  const fetchAssignedIncidentsFromToList = async (toList: Array<{tenant_id: string, uuid: string}>) => {
+    if (!toList || toList.length === 0) {
+      return []
+    }
+
+    const incidentDetails: Incident[] = []
+    const incidentsUrl = process.env.NEXT_PUBLIC_LAMBDA_INCIDENTS_URL
+
+    for (const item of toList) {
+      try {
+        // Obtener detalles del incidente específico
+        const url = `${incidentsUrl}?tenant_id=${encodeURIComponent(item.tenant_id)}&uuid=${encodeURIComponent(item.uuid)}`
+        
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+          },
+        })
+
+        if (response.ok) {
+          const incidents = await response.json()
+          if (incidents && incidents.length > 0) {
+            const incident = incidents[0]
+            // Mapear al formato frontend
+            const mappedIncident: Incident = {
+              Type: incident.tenant_id || incident.Type || '',
+              UUID: incident.uuid || incident.UUID || '',
+              Title: incident.Title || '',
+              Description: incident.Description || '',
+              ResponsibleArea: Array.isArray(incident.ResponsibleArea) 
+                ? incident.ResponsibleArea 
+                : [incident.ResponsibleArea].filter(Boolean),
+              CreatedById: incident.CreatedById || '',
+              CreatedByName: incident.CreatedByName || '',
+              Status: incident.Status || 'Pendiente',
+              Priority: incident.Priority || 'MEDIA',
+              CreatedAt: incident.CreatedAt || '',
+              LocationTower: incident.LocationTower || '',
+              LocationFloor: incident.LocationFloor || '',
+              LocationArea: incident.LocationArea || '',
+              IsGlobal: incident.IsGlobal || false,
+              Reference: incident.Reference || '',
+              Comment: incident.Comment || null,
+              PendienteReasignacion: incident.PendienteReasignacion || false,
+            }
+            incidentDetails.push(mappedIncident)
+          }
+        }
+      } catch (error) {
+        console.error(`❌ Error al obtener detalles del incidente ${item.uuid}:`, error)
+      }
+    }
+
+    return incidentDetails
+  }
 
   useEffect(() => {
-    // Simulación de datos - aquí iría la llamada a la API filtrando por AssignedToPersonalId y Area
-    setAssignedIncidents([
-      {
-        Type: 'Fuga de agua',
-        UUID: '1',
-        Title: 'Fuga de agua en el baño del segundo piso',
-        Description: 'Fuga de agua en el baño del segundo piso',
-        ResponsibleArea: ['Infraestructura y mantenimiento'],
-        CreatedById: 'user1',
-        CreatedByName: 'Juan Pérez',
-        Status: 'EN_ATENCION',
-        Priority: 'ALTA',
-        IsGlobal: false,
-        CreatedAt: '2024-11-15T10:30:00Z',
-        ExecutingAt: '2024-11-15T11:00:00Z',
-        LocationTower: 'Torre A',
-        LocationFloor: 'Piso 2',
-        LocationArea: 'Baño',
-        Reference: 'REF-001',
-        AssignedToPersonalId: user?.UUID || 'personal1',
-        PendienteReasignacion: false,
-        Comment: [],
-      },
-    ])
+    const fetchAllData = async () => {
+      if (!user || !user.Area) {
+        setLoading(false)
+        setError('Usuario sin área definida')
+        return
+      }
 
-    setAreaIncidents([
-      {
-        Type: 'Luz dañada',
-        UUID: '2',
-        Title: 'Lámpara fundida en el pasillo principal',
-        Description: 'Lámpara fundida en el pasillo principal',
-        ResponsibleArea: ['Infraestructura y mantenimiento'],
-        CreatedById: 'user2',
-        CreatedByName: 'María García',
-        Status: 'PENDIENTE',
-        Priority: 'MEDIA',
-        IsGlobal: false,
-        CreatedAt: '2024-11-15T09:15:00Z',
-        LocationTower: 'Torre B',
-        LocationFloor: 'Piso 1',
-        LocationArea: 'Pasillo',
-        Reference: 'REF-002',
-        PendienteReasignacion: false,
-        Comment: [],
-      },
-    ])
+      try {
+        setLoading(true)
+        setError('')
+        const token = localStorage.getItem('auth_token')
+        if (!token) {
+          console.error('No hay token de autenticación')
+          return
+        }
+
+        // Obtener incidentes por área
+        const incidentsUrl = process.env.NEXT_PUBLIC_LAMBDA_INCIDENTS_URL
+        if (!incidentsUrl) {
+          console.error('Variable de entorno NEXT_PUBLIC_LAMBDA_INCIDENTS_URL no configurada')
+          return
+        }
+
+        // Llamar al endpoint con filtro por status=Pendiente para mostrar solo incidentes pendientes
+        const url = `${incidentsUrl}?status=Pendiente`
+        
+        // 1. Primero obtener información del usuario (incluye ToList con incidentes asignados)
+        console.log('👤 PERSONAL - Obteniendo información del usuario...')
+        const userInfo = await fetchUserInfo()
+        if (!userInfo) {
+          throw new Error('No se pudo obtener información del usuario')
+        }
+
+        console.log('📋 PERSONAL - ToList del usuario:', userInfo.ToList)
+
+        // 2. Obtener incidentes asignados desde ToList
+        let assignedFromToList: Incident[] = []
+        if (userInfo.ToList && userInfo.ToList.length > 0) {
+          console.log('📥 PERSONAL - Obteniendo detalles de incidentes asignados...')
+          assignedFromToList = await fetchAssignedIncidentsFromToList(userInfo.ToList)
+          console.log('✅ PERSONAL - Incidentes asignados obtenidos:', assignedFromToList.length)
+        }
+
+        // 3. Obtener incidentes disponibles del área
+        console.log('📡 PERSONAL - Llamada a API para incidentes del área:', {
+          userArea: user.Area,
+          url,
+          token: token ? 'presente' : 'ausente'
+        })
+        
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+        })
+
+        console.log('📄 PERSONAL - Respuesta API:', {
+          status: response.status,
+          ok: response.ok
+        })
+
+        if (!response.ok) {
+          throw new Error(`Error ${response.status}: ${response.statusText}`)
+        }
+
+        const incidents = await response.json()
+        
+        console.log('🔍 PERSONAL - Incidentes del área obtenidos:', incidents.length)
+        
+        // Mapear los datos del backend al formato frontend
+        const mappedIncidents: Incident[] = incidents.map((incident: any) => ({
+          Type: incident.tenant_id || incident.Type || '',
+          UUID: incident.uuid || incident.UUID || '',
+          Title: incident.Title || '',
+          Description: incident.Description || '',
+          ResponsibleArea: Array.isArray(incident.ResponsibleArea) 
+            ? incident.ResponsibleArea 
+            : [incident.ResponsibleArea].filter(Boolean),
+          CreatedById: incident.CreatedById || '',
+          CreatedByName: incident.CreatedByName || '',
+          Status: incident.Status || 'Pendiente', // El backend ya envía el estado en español
+          Priority: incident.Priority || 'MEDIA',
+          IsGlobal: incident.IsGlobal || false,
+          CreatedAt: incident.CreatedAt || '',
+          ExecutingAt: incident.ExecutingAt || undefined,
+          ResolvedAt: incident.ResolvedAt || undefined,
+          LocationTower: incident.LocationTower || '',
+          LocationFloor: incident.LocationFloor || '',
+          LocationArea: incident.LocationArea || '',
+          Reference: incident.Reference || '',
+          AssignedToPersonalId: incident.AssignedToPersonalId || undefined,
+          PendienteReasignacion: incident.PendienteReasignacion || false,
+          Subtype: incident.Subtype || incident.subType?.toString() || undefined,
+          Comment: Array.isArray(incident.Comment) ? incident.Comment : [],
+        }))
+
+        console.log('📋 PERSONAL - Incidentes mapeados:', mappedIncidents.map(inc => ({
+          UUID: inc.UUID,
+          Title: inc.Title,
+          ResponsibleArea: inc.ResponsibleArea,
+          AssignedToPersonalId: inc.AssignedToPersonalId
+        })))
+        
+        // Separar incidentes asignados específicamente al usuario vs incidentes del área
+        const assigned = mappedIncidents.filter(inc => inc.AssignedToPersonalId === user.UUID)
+        console.log('🎯 PERSONAL - Incidentes asignados a mí:', assigned.length)
+        
+        // Mapear posibles variaciones de nombres de área
+        const areaMap: { [key: string]: string } = {
+          'TI': 'Tecnologías de la Información (TI)',
+          'Tecnologías de la Información': 'Tecnologías de la Información (TI)',
+          'Infraestructura': 'Infraestructura y mantenimiento',
+          'Mantenimiento': 'Infraestructura y mantenimiento',
+          'Laboratorios': 'Laboratorios y talleres',
+          'Talleres': 'Laboratorios y talleres',
+          'Servicio médico': 'Servicio médico/Tópico',
+          'Tópico': 'Servicio médico/Tópico',
+        }
+        
+        const userAreaNormalized = areaMap[user.Area!] || user.Area!
+        console.log('🏷️ PERSONAL - Área del usuario:', {
+          original: user.Area,
+          normalizada: userAreaNormalized
+        })
+        
+        const areaOnly = mappedIncidents.filter(inc => {
+          const isAreaMatch = inc.ResponsibleArea.some(area => {
+            const matches = area === userAreaNormalized || 
+                           areaMap[area] === userAreaNormalized ||
+                           area === user.Area ||
+                           area.toLowerCase().includes(user.Area!.toLowerCase()) ||
+                           user.Area!.toLowerCase().includes(area.toLowerCase())
+            
+            if (matches) {
+              console.log('✅ PERSONAL - Match encontrado:', {
+                incidentArea: area,
+                userArea: user.Area,
+                incidentTitle: inc.Title
+              })
+            }
+            return matches
+          })
+          
+          return !inc.AssignedToPersonalId && isAreaMatch
+        })
+        
+        console.log('🏢 PERSONAL - Incidentes del área:', areaOnly.length)
+        
+        // 4. Actualizar estados con los nuevos datos
+        console.log('📊 PERSONAL - Resumen final:', {
+          totalIncidentsFromAPI: incidents.length,
+          assignedFromToList: assignedFromToList.length,
+          availableInArea: areaOnly.length
+        })
+        
+        setAssignedIncidents(assignedFromToList) // Usar incidentes de ToList
+        setAreaIncidents(areaOnly)
+        
+      } catch (error) {
+        console.error('Error al cargar incidentes del área:', error)
+        setError('Error al cargar los incidentes. Por favor, intenta nuevamente.')
+        setAssignedIncidents([])
+        setAreaIncidents([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchAllData()
   }, [user])
 
   const stats = {
     assigned: assignedIncidents.length,
-    assignedPending: assignedIncidents.filter((i) => i.Status === 'PENDIENTE').length,
-    assignedInProgress: assignedIncidents.filter((i) => i.Status === 'EN_ATENCION').length,
-    assignedResolved: assignedIncidents.filter((i) => i.Status === 'RESUELTO').length,
+    assignedPending: assignedIncidents.filter((i) => i.Status === 'Pendiente').length,
+    assignedInProgress: assignedIncidents.filter((i) => i.Status === 'EnAtencion').length,
+    assignedResolved: assignedIncidents.filter((i) => i.Status === 'Resuelto').length,
     areaTotal: areaIncidents.length,
   }
 
-  const handleUpdateStatus = (uuid: string, newStatus: Incident['Status']) => {
-    setAssignedIncidents(
-      assignedIncidents.map((inc) =>
-        inc.UUID === uuid ? { ...inc, Status: newStatus } : inc
+  const handleUpdateStatus = async (uuid: string, newStatus: Incident['Status']) => {
+    if (!user) return
+
+    // Para marcar como resuelto, usar WebSocket con SolvedIncident
+    if (newStatus === 'Resuelto') {
+      try {
+        // Encontrar el incidente para obtener el tenant_id
+        const incident = assignedIncidents.find(inc => inc.UUID === uuid)
+        if (!incident) {
+          console.error('Incidente no encontrado:', uuid)
+          alert('Error: Incidente no encontrado')
+          return
+        }
+
+        const payload = {
+          action: 'SolvedIncident',
+          tenant_id: incident.Type, // El Type contiene el tenant_id
+          uuid: uuid
+        }
+
+        console.log('📤 Enviando SolvedIncident:', payload)
+
+        // Enviar mediante WebSocket
+        if (wsClient.isConnected()) {
+          wsClient.send(payload)
+          
+          // Actualizar el estado local inmediatamente para mejor UX
+          setAssignedIncidents(
+            assignedIncidents.map((inc) =>
+              inc.UUID === uuid ? { ...inc, Status: 'Resuelto' } : inc
+            )
+          )
+          
+          console.log('✅ Incidente marcado como resuelto exitosamente')
+        } else {
+          console.error('❌ WebSocket no conectado')
+          alert('Error: No hay conexión WebSocket. Por favor recarga la página.')
+        }
+      } catch (error) {
+        console.error('❌ Error al marcar incidente como resuelto:', error)
+        alert('Error al marcar el incidente como resuelto. Por favor intenta de nuevo.')
+      }
+    } else {
+      // Para otros estados, solo actualizar localmente (por ahora)
+      setAssignedIncidents(
+        assignedIncidents.map((inc) =>
+          inc.UUID === uuid ? { ...inc, Status: newStatus } : inc
+        )
       )
-    )
+    }
+  }
+
+  const handleChooseIncident = async (incident: Incident) => {
+    if (!user) return
+
+    try {
+      // Preparar el payload para el WebSocket
+      const payload = {
+        action: 'StaffChooseIncident',
+        tenant_id: incident.Type, // El Type contiene el tenant_id
+        uuid: incident.UUID,
+        Area: user.Area // Área del usuario PERSONAL
+      }
+
+      console.log('📤 Enviando StaffChooseIncident:', payload)
+
+      // Enviar mediante WebSocket
+      if (wsClient.isConnected()) {
+        wsClient.send(payload)
+        
+        // Actualizar el estado local inmediatamente para mejor UX
+        setAreaIncidents(areaIncidents.filter(inc => inc.UUID !== incident.UUID))
+        setAssignedIncidents([...assignedIncidents, { ...incident, Status: 'EnAtencion' }])
+        
+        console.log('✅ Incidente elegido y asignado exitosamente')
+      } else {
+        console.error('❌ WebSocket no conectado')
+        alert('Error: No hay conexión WebSocket. Por favor recarga la página.')
+      }
+    } catch (error) {
+      console.error('❌ Error al elegir incidente:', error)
+      alert('Error al elegir el incidente. Por favor intenta de nuevo.')
+    }
   }
 
   return (
@@ -93,6 +389,29 @@ function PersonalDashboardContent() {
           <p className="text-xl text-gray-600">Gestiona los incidentes asignados a tu área: {user?.Area}</p>
         </div>
 
+        {/* Loading State */}
+        {loading && (
+          <div className="flex justify-center items-center h-64">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-utec-primary mx-auto mb-4"></div>
+              <p className="text-gray-600">Cargando incidentes de tu área...</p>
+            </div>
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && !loading && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <AlertTriangle className="h-5 w-5 text-red-500 mr-2" />
+              <p className="text-red-700">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Content - only show when not loading */}
+        {!loading && !error && (
+          <>
         {/* Welcome Card */}
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-utec-secondary via-utec-light to-utec-secondary text-white mb-8 animate-slide-up shadow-xl">
           <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent"></div>
@@ -188,16 +507,16 @@ function PersonalDashboardContent() {
                     <div className="flex flex-col items-end gap-2 ml-4">
                       <span
                         className={`badge ${
-                          incident.Status === 'PENDIENTE'
+                          incident.Status === 'Pendiente'
                             ? 'badge-pending'
-                            : incident.Status === 'EN_ATENCION'
+                            : incident.Status === 'EnAtencion'
                             ? 'badge-in-progress'
                             : 'badge-resolved'
                         }`}
                       >
-                        {incident.Status === 'PENDIENTE'
+                        {incident.Status === 'Pendiente'
                           ? 'Pendiente'
-                          : incident.Status === 'EN_ATENCION'
+                          : incident.Status === 'EnAtencion'
                           ? 'En Atención'
                           : 'Resuelto'}
                       </span>
@@ -214,24 +533,24 @@ function PersonalDashboardContent() {
                   </div>
                   <div className="flex items-center justify-between pt-3 border-t">
                     <Link
-                      href={`/incidents/${incident.UUID}`}
+                      href={`/incidents/${encodeURIComponent(incident.UUID)}`}
                       className="flex items-center space-x-2 text-green-600 hover:text-green-700 font-medium text-sm"
                     >
                       <MessageSquare className="h-4 w-4" />
                       <span>Ver Detalles</span>
                     </Link>
                     <div className="flex space-x-2">
-                      {incident.Status !== 'EN_ATENCION' && (
+                      {incident.Status !== 'EnAtencion' && (
                         <button
-                          onClick={() => handleUpdateStatus(incident.UUID, 'EN_ATENCION')}
+                          onClick={() => handleUpdateStatus(incident.UUID, 'EnAtencion')}
                           className="px-4 py-2 bg-utec-secondary text-white rounded-lg hover:bg-utec-primary transition-colors text-sm"
                         >
                           Tomar en Atención
                         </button>
                       )}
-                      {incident.Status !== 'RESUELTO' && (
+                      {incident.Status !== 'Resuelto' && (
                         <button
-                          onClick={() => handleUpdateStatus(incident.UUID, 'RESUELTO')}
+                          onClick={() => handleUpdateStatus(incident.UUID, 'Resuelto')}
                           className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm"
                         >
                           Marcar como Resuelto
@@ -259,27 +578,31 @@ function PersonalDashboardContent() {
               </div>
             ) : (
               areaIncidents.map((incident) => (
-                <Link
+                <div
                   key={incident.UUID}
-                  href={`/incidents/${incident.UUID}`}
-                  className="block p-4 border-2 border-gray-100 rounded-xl hover:border-purple-500 hover:shadow-lg transition-all group"
+                  className="p-4 border-2 border-gray-100 rounded-xl hover:border-purple-500 hover:shadow-lg transition-all"
                 >
                   <div className="flex items-start justify-between mb-2">
-                    <h3 className="font-bold text-sm text-gray-900 group-hover:text-purple-600 transition-colors">
-                      {incident.Title}
-                    </h3>
+                    <Link 
+                      href={`/incidents/${encodeURIComponent(incident.UUID)}`}
+                      className="flex-1 group"
+                    >
+                      <h3 className="font-bold text-sm text-gray-900 group-hover:text-purple-600 transition-colors">
+                        {incident.Title}
+                      </h3>
+                    </Link>
                     <span
                       className={`badge ${
-                        incident.Status === 'PENDIENTE'
+                        incident.Status === 'Pendiente'
                           ? 'badge-pending'
-                          : incident.Status === 'EN_ATENCION'
+                          : incident.Status === 'EnAtencion'
                           ? 'badge-in-progress'
                           : 'badge-resolved'
                       }`}
                     >
-                      {incident.Status === 'PENDIENTE'
+                      {incident.Status === 'Pendiente'
                         ? 'Pendiente'
-                        : incident.Status === 'EN_ATENCION'
+                        : incident.Status === 'EnAtencion'
                         ? 'En Atención'
                         : 'Resuelto'}
                     </span>
@@ -287,12 +610,35 @@ function PersonalDashboardContent() {
                   <p className="text-xs text-gray-600 mb-2 font-medium">
                     {incident.LocationTower} - {incident.LocationFloor} - {incident.LocationArea}
                   </p>
-                  <p className="text-xs text-gray-500 line-clamp-2">{incident.Description}</p>
-                </Link>
+                  <p className="text-xs text-gray-500 line-clamp-2 mb-3">{incident.Description}</p>
+                  
+                  {/* Botones de acción */}
+                  <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                    <Link
+                      href={`/incidents/${encodeURIComponent(incident.UUID)}`}
+                      className="flex items-center space-x-2 text-purple-600 hover:text-purple-700 font-medium text-xs"
+                    >
+                      <MessageSquare className="h-3 w-3" />
+                      <span>Ver Detalles</span>
+                    </Link>
+                    
+                    {/* Solo mostrar botón de elegir para incidentes pendientes */}
+                    {incident.Status === 'Pendiente' && (
+                      <button
+                        onClick={() => handleChooseIncident(incident)}
+                        className="px-3 py-1 bg-utec-secondary text-white rounded-lg hover:bg-utec-primary transition-colors text-xs font-medium"
+                      >
+                        Elegir Incidente
+                      </button>
+                    )}
+                  </div>
+                </div>
               ))
             )}
           </div>
         </div>
+          </>
+        )}
       </div>
     </div>
   )

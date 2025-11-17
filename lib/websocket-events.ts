@@ -39,7 +39,7 @@ export function editIncidentContent(data: {
   tenant_id: string
   uuid: string
   CreatedById?: string
-  actionToDo: 'Editar' | 'AjustarUrgencia'
+  actionToDo: 'Editar' | 'AjustarUrgencia' | 'Eliminar'
   new_title?: string
   new_description?: string
   new_priority?: 'bajo' | 'media' | 'alta' | 'critico'
@@ -61,6 +61,7 @@ export function editIncidentContent(data: {
   } else if (data.actionToDo === 'AjustarUrgencia') {
     if (data.new_priority) message.new_priority = data.new_priority
   }
+  // Para 'Eliminar' no se necesitan parámetros adicionales
 
   wsClient.send(message)
 }
