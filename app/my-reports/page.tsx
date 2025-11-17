@@ -14,7 +14,7 @@ export default function MyReportsPage() {
   const router = useRouter()
   const { user } = useUser()
   
-  // Estados para manejar los incidentes asignados desde ToList
+  // Estados para manejar los incidentes (asignados para PERSONAL, creados para COMMUNITY)
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>('')
@@ -121,9 +121,81 @@ export default function MyReportsPage() {
     return incidentDetails
   }
 
-  // Efecto para cargar incidentes asignados desde ToList
+  // Función para obtener incidentes creados por el usuario COMMUNITY
+  const fetchCreatedIncidents = async () => {
+    try {
+      const token = localStorage.getItem('auth_token')
+      if (!token) {
+        console.error('No hay token de autenticación')
+        return []
+      }
+
+      const incidentsUrl = process.env.NEXT_PUBLIC_LAMBDA_INCIDENTS_URL
+      if (!incidentsUrl) {
+        console.error('Variable de entorno NEXT_PUBLIC_LAMBDA_INCIDENTS_URL no configurada')
+        return []
+      }
+
+      // Obtener todos los incidentes y filtrar por CreatedById
+      const response = await fetch(incidentsUrl, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error(`Error al obtener incidentes: ${response.status}`)
+      }
+
+      const allIncidents = await response.json()
+      console.log('📋 MY-REPORTS (COMMUNITY) - Total incidentes obtenidos:', allIncidents.length)
+
+      // Filtrar solo los incidentes creados por este usuario
+      const userIncidents = allIncidents.filter((incident: any) => 
+        incident.CreatedById === user?.UUID
+      )
+
+      console.log('🎯 MY-REPORTS (COMMUNITY) - Incidentes creados por usuario:', userIncidents.length)
+
+      // Mapear al formato frontend
+      const mappedIncidents: Incident[] = userIncidents.map((incident: any) => ({
+        Type: incident.tenant_id || incident.Type || '',
+        UUID: incident.uuid || incident.UUID || '',
+        Title: incident.Title || '',
+        Description: incident.Description || '',
+        ResponsibleArea: Array.isArray(incident.ResponsibleArea) 
+          ? incident.ResponsibleArea 
+          : [incident.ResponsibleArea].filter(Boolean),
+        CreatedById: incident.CreatedById || '',
+        CreatedByName: incident.CreatedByName || '',
+        Status: incident.Status || 'Pendiente',
+        Priority: incident.Priority || 'MEDIA',
+        CreatedAt: incident.CreatedAt || '',
+        LocationTower: incident.LocationTower || '',
+        LocationFloor: incident.LocationFloor || '',
+        LocationArea: incident.LocationArea || '',
+        IsGlobal: incident.IsGlobal || false,
+        Reference: incident.Reference || '',
+        Comment: incident.Comment || null,
+        PendienteReasignacion: incident.PendienteReasignacion || false,
+        ExecutingAt: incident.ExecutingAt || undefined,
+        ResolvedAt: incident.ResolvedAt || undefined,
+        AssignedToPersonalId: incident.AssignedToPersonalId || undefined,
+        Subtype: incident.Subtype || incident.subType?.toString() || undefined,
+      }))
+
+      return mappedIncidents
+    } catch (error) {
+      console.error('❌ Error al obtener incidentes creados:', error)
+      return []
+    }
+  }
+
+  // Efecto para cargar incidentes según el rol del usuario
   useEffect(() => {
-    const fetchAssignedIncidents = async () => {
+    const fetchUserIncidents = async () => {
       if (!user) {
         setLoading(false)
         return
@@ -133,34 +205,44 @@ export default function MyReportsPage() {
         setLoading(true)
         setError('')
 
-        // 1. Obtener información del usuario (incluye ToList)
-        console.log('👤 MY-REPORTS - Obteniendo información del usuario...')
-        const userInfo = await fetchUserInfo()
-        if (!userInfo) {
-          throw new Error('No se pudo obtener información del usuario')
+        let userIncidents: Incident[] = []
+
+        if (user.Role === 'COMMUNITY') {
+          // Para COMMUNITY: obtener incidentes creados por el usuario
+          console.log('👤 MY-REPORTS (COMMUNITY) - Obteniendo incidentes creados por el usuario...')
+          userIncidents = await fetchCreatedIncidents()
+        } else if (user.Role === 'PERSONAL') {
+          // Para PERSONAL: obtener incidentes asignados desde ToList
+          console.log('👤 MY-REPORTS (PERSONAL) - Obteniendo información del usuario...')
+          const userInfo = await fetchUserInfo()
+          if (!userInfo) {
+            throw new Error('No se pudo obtener información del usuario')
+          }
+
+          console.log('📋 MY-REPORTS (PERSONAL) - ToList del usuario:', userInfo.ToList)
+
+          if (userInfo.ToList && userInfo.ToList.length > 0) {
+            console.log('📥 MY-REPORTS (PERSONAL) - Obteniendo detalles de incidentes asignados...')
+            userIncidents = await fetchAssignedIncidentsFromToList(userInfo.ToList)
+            console.log('✅ MY-REPORTS (PERSONAL) - Incidentes asignados obtenidos:', userIncidents.length)
+          }
+        } else {
+          // Para otros roles, no mostrar incidentes por ahora
+          console.log('👤 MY-REPORTS - Rol no soportado:', user.Role)
+          userIncidents = []
         }
 
-        console.log('📋 MY-REPORTS - ToList del usuario:', userInfo.ToList)
-
-        // 2. Obtener incidentes asignados desde ToList
-        let assignedIncidents: Incident[] = []
-        if (userInfo.ToList && userInfo.ToList.length > 0) {
-          console.log('📥 MY-REPORTS - Obteniendo detalles de incidentes asignados...')
-          assignedIncidents = await fetchAssignedIncidentsFromToList(userInfo.ToList)
-          console.log('✅ MY-REPORTS - Incidentes asignados obtenidos:', assignedIncidents.length)
-        }
-
-        setIncidents(assignedIncidents)
+        setIncidents(userIncidents)
       } catch (error) {
-        console.error('❌ Error al cargar incidentes asignados:', error)
-        setError('Error al cargar los incidentes asignados. Por favor, intenta nuevamente.')
+        console.error('❌ Error al cargar incidentes:', error)
+        setError('Error al cargar los incidentes. Por favor, intenta nuevamente.')
         setIncidents([])
       } finally {
         setLoading(false)
       }
     }
 
-    fetchAssignedIncidents()
+    fetchUserIncidents()
   }, [user])
 
   // Filtrar incidentes según búsqueda y estado
@@ -339,15 +421,24 @@ export default function MyReportsPage() {
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Mis Asignaciones</h1>
-          <p className="text-gray-600">Gestiona y sigue el estado de los incidentes asignados a ti</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            {user?.Role === 'COMMUNITY' ? 'Mis Reportes' : 'Mis Asignaciones'}
+          </h1>
+          <p className="text-gray-600">
+            {user?.Role === 'COMMUNITY' 
+              ? 'Gestiona y sigue el estado de los incidentes que has reportado'
+              : 'Gestiona y sigue el estado de los incidentes asignados a ti'
+            }
+          </p>
         </div>
 
         {/* Stats Summary */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-lg shadow-sm p-5 flex items-center justify-between hover:shadow-md transition-shadow">
             <div>
-              <p className="text-sm font-medium text-gray-600 mb-2">Total Asignados</p>
+              <p className="text-sm font-medium text-gray-600 mb-2">
+                {user?.Role === 'COMMUNITY' ? 'Total Reportes' : 'Total Asignados'}
+              </p>
               <p className="text-3xl font-bold text-gray-900">{incidents.length}</p>
             </div>
             <AlertTriangle className="h-10 w-10 text-utec-secondary" strokeWidth={1.5} />
