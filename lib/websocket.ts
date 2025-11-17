@@ -56,9 +56,20 @@ class WebSocketClient {
 
       this.ws.onmessage = (event) => {
         try {
+          console.log('[WebSocket] 📥 ===== MENSAJE RECIBIDO DEL SERVIDOR =====')
+          console.log('[WebSocket] 📥 Tipo de dato:', typeof event.data)
+          console.log('[WebSocket] 📥 Mensaje RAW recibido del servidor:', event.data)
+          console.log('[WebSocket] 📥 Longitud del mensaje:', event.data?.length || 0, 'bytes')
+          
           const data = JSON.parse(event.data)
+          console.log('[WebSocket] 📥 Mensaje parseado (objeto):', data)
+          console.log('[WebSocket] 📥 Action en el mensaje:', data.action || data.type || 'NO HAY ACTION')
+          console.log('[WebSocket] 📥 ===========================================')
+          
           this.handleMessage(data)
         } catch (error) {
+          console.error('[WebSocket] ❌ Error al parsear mensaje:', error)
+          console.error('[WebSocket] ❌ Data que causó el error:', event.data)
         }
       }
 
@@ -107,12 +118,21 @@ class WebSocketClient {
   }
 
   private handleMessage(data: any) {
+    console.log('[WebSocket] 📥 Mensaje recibido en handleMessage:', data)
     const action = data.action || data.type
+    console.log('[WebSocket] 📥 Action extraída:', action)
     
+    // SIEMPRE emitir el evento genérico 'message' primero para capturar todo
+    console.log('[WebSocket] 📤 Emitiendo evento genérico "message" con datos completos')
+    this.emit('message', data)
+    
+    // Luego emitir el evento específico si tiene action
     if (action) {
-      this.emit(action, data.data || data)
+      const payload = data.data || data
+      console.log('[WebSocket] 📤 Emitiendo evento específico:', action, 'con payload:', payload)
+      this.emit(action, payload)
     } else {
-      this.emit('message', data)
+      console.log('[WebSocket] ⚠️ Mensaje sin action, solo se emitió como "message"')
     }
   }
 
@@ -132,22 +152,34 @@ class WebSocketClient {
 
   private emit(event: string, data: any) {
     const callbacks = this.listeners.get(event)
-    if (callbacks) {
-      callbacks.forEach((callback) => {
+    console.log(`[WebSocket] 🔊 Emitiendo evento "${event}" a ${callbacks?.size || 0} listeners`)
+    console.log(`[WebSocket] 🔊 Datos del evento:`, data)
+    
+    if (callbacks && callbacks.size > 0) {
+      callbacks.forEach((callback, index) => {
         try {
+          console.log(`[WebSocket] 🔊 Ejecutando callback ${index + 1}/${callbacks.size} para evento "${event}"`)
           callback(data)
         } catch (error) {
+          console.error(`[WebSocket] ❌ Error en callback ${index + 1} para evento "${event}":`, error)
         }
       })
+    } else {
+      console.warn(`[WebSocket] ⚠️ No hay listeners registrados para el evento "${event}"`)
+      console.warn(`[WebSocket] ⚠️ Listeners disponibles:`, Array.from(this.listeners.keys()))
     }
   }
 
   send(message: any) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      console.log('[WebSocket] 📤 Enviando mensaje:', message)
-      this.ws.send(JSON.stringify(message))
+      const jsonMessage = JSON.stringify(message)
+      console.log('[WebSocket] 📤 Enviando mensaje (objeto):', message)
+      console.log('[WebSocket] 📤 Enviando mensaje (JSON string):', jsonMessage)
+      console.log('[WebSocket] 📤 Longitud del mensaje:', jsonMessage.length, 'bytes')
+      this.ws.send(jsonMessage)
     } else {
       console.warn('[WebSocket] ⚠️ Intento de envío con conexión cerrada')
+      console.warn('[WebSocket] ⚠️ Estado del WebSocket:', this.ws?.readyState)
     }
   }
 

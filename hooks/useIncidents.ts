@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Incident } from '@/types'
 import { authenticatedFetch } from '@/lib/auth'
 import { wsClient } from '@/lib/websocket'
@@ -87,6 +87,18 @@ export function useIncidents(filters?: {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Memoizar los filtros para evitar recreaciones innecesarias
+  const memoizedFilters = useMemo(() => filters, [
+    filters?.status,
+    filters?.priority,
+    filters?.area,
+    filters?.global,
+    filters?.tenant_id,
+    filters?.type,
+    filters?.minWaitMinutes,
+    filters?.maxWaitMinutes
+  ])
+
   const fetchIncidents = useCallback(async () => {
     try {
       setLoading(true)
@@ -100,29 +112,76 @@ export function useIncidents(filters?: {
 
       const incidentsUrl = process.env.NEXT_PUBLIC_LAMBDA_INCIDENTS_URL!
       
+      console.log('🔍 [useIncidents] URL del Lambda:', incidentsUrl)
+      console.log('🔍 [useIncidents] Usuario:', { Role: user.Role, Area: user.Area, UUID: user.UUID })
+      
       const queryParams = new URLSearchParams()
-      if (filters?.status) queryParams.append('status', filters.status)
-      if (filters?.priority) queryParams.append('priority', filters.priority)
-      if (filters?.area) queryParams.append('area', filters.area)
-      if (filters?.global !== undefined) queryParams.append('global', filters.global.toString())
-      if (filters?.tenant_id) queryParams.append('tenant_id', filters.tenant_id)
-      if (filters?.type) queryParams.append('type', filters.type)
-      if (filters?.minWaitMinutes !== undefined) queryParams.append('minWaitMinutes', filters.minWaitMinutes.toString())
-      if (filters?.maxWaitMinutes !== undefined) queryParams.append('maxWaitMinutes', filters.maxWaitMinutes.toString())
+      if (memoizedFilters?.status) queryParams.append('status', memoizedFilters.status)
+      if (memoizedFilters?.priority) queryParams.append('priority', memoizedFilters.priority)
+      
+      // Solo agregar área si se pasa explícitamente como filtro
+      // El backend ya filtra automáticamente por área del coordinador basándose en el token
+      if (memoizedFilters?.area) {
+        queryParams.append('area', memoizedFilters.area)
+        console.log('🔍 [useIncidents] Usando filtro área explícito:', memoizedFilters.area)
+      }
+      
+      if (memoizedFilters?.global !== undefined) queryParams.append('global', memoizedFilters.global.toString())
+      if (memoizedFilters?.tenant_id) queryParams.append('tenant_id', memoizedFilters.tenant_id)
+      if (memoizedFilters?.type) queryParams.append('type', memoizedFilters.type)
+      if (memoizedFilters?.minWaitMinutes !== undefined) queryParams.append('minWaitMinutes', memoizedFilters.minWaitMinutes.toString())
+      if (memoizedFilters?.maxWaitMinutes !== undefined) queryParams.append('maxWaitMinutes', memoizedFilters.maxWaitMinutes.toString())
 
       const url = queryParams.toString() 
         ? `${incidentsUrl}?${queryParams.toString()}`
         : incidentsUrl
 
+      console.log('🔍 [useIncidents] URL completa:', url)
+      console.log('🔍 [useIncidents] Query params:', queryParams.toString())
+
       const response = await authenticatedFetch(url, {
         method: 'GET',
       })
 
+      console.log('🔍 [useIncidents] Respuesta del servidor:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: Object.fromEntries(response.headers)
+      })
+
       if (!response.ok) {
-        throw new Error(`Error al obtener incidentes: ${response.statusText}`)
+        let errorText = ''
+        try {
+          errorText = await response.text()
+          console.error('❌ [useIncidents] Error en respuesta:', errorText)
+        } catch (e) {
+          console.error('❌ [useIncidents] No se pudo leer el error:', e)
+        }
+        throw new Error(`Error al obtener incidentes: ${response.status} ${response.statusText}`)
       }
 
-      const data = await response.json()
+      // Leer la respuesta como texto primero para ver qué está devolviendo exactamente
+      const responseText = await response.text()
+      console.log('🔍 [useIncidents] Respuesta raw (texto):', responseText)
+      console.log('🔍 [useIncidents] Longitud de respuesta:', responseText.length)
+      
+      let data
+      try {
+        data = JSON.parse(responseText)
+      } catch (e) {
+        console.error('❌ [useIncidents] Error al parsear JSON:', e)
+        console.error('❌ [useIncidents] Respuesta que falló:', responseText)
+        throw new Error('Respuesta inválida del servidor')
+      }
+      
+      console.log('🔍 [useIncidents] Datos recibidos:', {
+        tipo: Array.isArray(data) ? 'array' : typeof data,
+        cantidad: Array.isArray(data) ? data.length : 'N/A',
+        muestra: Array.isArray(data) && data.length > 0 ? data[0] : data,
+        datosCompletos: data
+      })
+      
       const backendIncidents = Array.isArray(data) ? data : []
 
       const mappedIncidents = backendIncidents.map(mapBackendIncidentToFrontend)
@@ -132,13 +191,15 @@ export function useIncidents(filters?: {
     } finally {
       setLoading(false)
     }
-  }, [filters, user])
+  }, [memoizedFilters, user])
 
   useEffect(() => {
     if (user) {
       fetchIncidents()
     }
-  }, [user, fetchIncidents])
+    // Solo ejecutar cuando cambien los filtros o el usuario, no cuando cambie fetchIncidents
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.UUID, user?.Role, user?.Area, memoizedFilters])
 
   useEffect(() => {
     if (!wsClient.isConnected() || !user) {
@@ -198,6 +259,15 @@ export function useIncidents(filters?: {
       }
     }
 
+    const handleAuthorityManageIncidents = (data: any) => {
+      const incident = data.incident || data.data || data
+      const mappedIncident = mapBackendIncidentToFrontend(incident)
+      
+      setIncidents((prev) =>
+        prev.map((inc) => (inc.UUID === mappedIncident.UUID ? mappedIncident : inc))
+      )
+    }
+
     wsClient.on('NewIncident', handleNewIncident)
     wsClient.on('PublishIncident', handleNewIncident)
     wsClient.on('EditIncidentContent', handleEditIncident)
@@ -205,6 +275,7 @@ export function useIncidents(filters?: {
     wsClient.on('StaffChooseIncident', handleEditIncident)
     wsClient.on('CoordinatorAssignIncident', handleEditIncident)
     wsClient.on('SolvedIncident', handleEditIncident)
+    wsClient.on('AuthorityManageIncidents', handleAuthorityManageIncidents)
 
     return () => {
       wsClient.off('NewIncident', handleNewIncident)
@@ -214,6 +285,7 @@ export function useIncidents(filters?: {
       wsClient.off('StaffChooseIncident', handleEditIncident)
       wsClient.off('CoordinatorAssignIncident', handleEditIncident)
       wsClient.off('SolvedIncident', handleEditIncident)
+      wsClient.off('AuthorityManageIncidents', handleAuthorityManageIncidents)
     }
   }, [user])
 

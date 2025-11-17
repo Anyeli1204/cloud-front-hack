@@ -14,7 +14,7 @@ export interface Incident {
   ResponsibleArea: string[]
   CreatedById: string
   CreatedByName: string
-  Status: 'Pendiente' | 'EnAtencion' | 'Resuelto'
+  Status: 'PENDIENTE' | 'EN_ATENCION' | 'RESUELTO'
   Priority: 'BAJO' | 'MEDIA' | 'ALTA' | 'CRÍTICO'
   IsGlobal: boolean
   CreatedAt: string // timestamp

@@ -13,10 +13,9 @@ import { useIncidents } from '@/hooks/useIncidents'
 
 function CoordinatorDashboardContent() {
   const { user } = useUser()
-  // Obtener incidentes filtrados por área del coordinador
-  const { incidents: allIncidents, loading } = useIncidents(
-    user?.Area ? { area: user.Area } : undefined
-  )
+  // El backend filtra automáticamente por área del coordinador basándose en el token
+  // No necesitamos pasar el filtro 'area' porque el Lambda ya lo maneja
+  const { incidents: allIncidents, loading } = useIncidents()
   
   // Filtrar incidentes pendientes de reasignación
   const pendingReassignment = useMemo(() => {
@@ -189,18 +188,47 @@ function CoordinatorDashboardContent() {
               incidents.map((incident) => (
                 <Link
                   key={incident.UUID}
-                  href={`/incidents/${incident.UUID}`}
+                  href={`/incidents/${encodeURIComponent(incident.UUID)}`}
                   className="block p-4 border-2 border-gray-100 rounded-xl hover:border-purple-500 hover:shadow-lg transition-all group"
                 >
-                  <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-start justify-between mb-3">
                     <div className="flex-1">
-                      <h3 className="font-bold text-sm text-gray-900 group-hover:text-purple-600 transition-colors">
+                      <h3 className="font-bold text-base text-gray-900 group-hover:text-purple-600 transition-colors mb-2">
                         {incident.Title}
                       </h3>
                       <p className="text-xs text-gray-600 mb-2 font-medium">
-                        {incident.LocationTower} - {incident.LocationFloor} - {incident.LocationArea}
+                        📍 {incident.LocationTower} - {incident.LocationFloor} - {incident.LocationArea}
                       </p>
-                      <p className="text-xs text-gray-500 line-clamp-2">{incident.Description}</p>
+                      <p className="text-sm text-gray-700 mb-3 line-clamp-2">{incident.Description}</p>
+                      
+                      {/* Información adicional */}
+                      <div className="flex flex-wrap gap-3 text-xs text-gray-500">
+                        {incident.CreatedByName && (
+                          <span className="flex items-center gap-1">
+                            👤 {incident.CreatedByName}
+                          </span>
+                        )}
+                        {incident.CreatedAt && (
+                          <span className="flex items-center gap-1">
+                            🕐 {format(new Date(incident.CreatedAt), "dd/MM/yyyy 'a las' HH:mm")}
+                          </span>
+                        )}
+                        {incident.WaitingMinutes !== undefined && incident.WaitingMinutes > 0 && (
+                          <span className="flex items-center gap-1 text-orange-600 font-medium">
+                            ⏱️ {Math.floor(incident.WaitingMinutes)} min de espera
+                          </span>
+                        )}
+                        {incident.ResponsibleArea && incident.ResponsibleArea.length > 0 && (
+                          <span className="flex items-center gap-1">
+                            🏢 {Array.isArray(incident.ResponsibleArea) ? incident.ResponsibleArea.join(', ') : incident.ResponsibleArea}
+                          </span>
+                        )}
+                        {incident.Comment && incident.Comment.length > 0 && (
+                          <span className="flex items-center gap-1 text-blue-600">
+                            💬 {incident.Comment.length} comentario{incident.Comment.length > 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="flex flex-col items-end gap-2 ml-4">
                       <span
@@ -227,6 +255,11 @@ function CoordinatorDashboardContent() {
                       >
                         {incident.Priority}
                       </span>
+                      {incident.AssignedToPersonalId && (
+                        <span className="text-xs text-gray-500 mt-1">
+                          Asignado
+                        </span>
+                      )}
                     </div>
                   </div>
                 </Link>
