@@ -7,23 +7,157 @@ import Link from 'next/link'
 import { format } from 'date-fns'
 import { Incident } from '@/types'
 import { useRouter } from 'next/navigation'
-import { useIncidents } from '@/hooks/useIncidents'
 import { useUser } from '@/contexts/UserContext'
 import { formatPeruTime, formatWaitingTime, calculateWaitingMinutes } from '@/lib/dateUtils'
 
 export default function MyReportsPage() {
   const router = useRouter()
   const { user } = useUser()
-  const { incidents: allIncidents, loading, error } = useIncidents()
   
-  // Filtrar solo los incidentes del usuario actual
-  const incidents = useMemo(() => {
-    if (!user?.UUID) return []
-    return allIncidents.filter((incident) => incident.CreatedById === user.UUID)
-  }, [allIncidents, user?.UUID])
+  // Estados para manejar los incidentes asignados desde ToList
+  const [incidents, setIncidents] = useState<Incident[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string>('')
   
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+
+  // Función para obtener información del usuario incluyendo ToList
+  const fetchUserInfo = async () => {
+    try {
+      const token = localStorage.getItem('auth_token')
+      if (!token) {
+        console.error('No hay token de autenticación')
+        return null
+      }
+
+      const whoamiUrl = process.env.NEXT_PUBLIC_LAMBDA_WHOAMI_URL || 'https://687qtzms2l.execute-api.us-east-1.amazonaws.com/whoami'
+      
+      const response = await fetch(whoamiUrl, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error(`Error al obtener información del usuario: ${response.status}`)
+      }
+
+      const userInfo = await response.json()
+      console.log('👤 MY-REPORTS - Información del usuario obtenida:', userInfo)
+      return userInfo
+    } catch (error) {
+      console.error('❌ Error al obtener información del usuario:', error)
+      return null
+    }
+  }
+
+  // Función para obtener detalles de incidentes desde ToList
+  const fetchAssignedIncidentsFromToList = async (toList: Array<{tenant_id: string, uuid: string}>) => {
+    if (!toList || toList.length === 0) {
+      return []
+    }
+
+    const incidentDetails: Incident[] = []
+    const incidentsUrl = process.env.NEXT_PUBLIC_LAMBDA_INCIDENTS_URL
+
+    for (const item of toList) {
+      try {
+        // Obtener detalles del incidente específico
+        const url = `${incidentsUrl}?tenant_id=${encodeURIComponent(item.tenant_id)}&uuid=${encodeURIComponent(item.uuid)}`
+        
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+          },
+        })
+
+        if (response.ok) {
+          const incidents = await response.json()
+          if (incidents && incidents.length > 0) {
+            const incident = incidents[0]
+            // Mapear al formato frontend
+            const mappedIncident: Incident = {
+              Type: incident.tenant_id || incident.Type || '',
+              UUID: incident.uuid || incident.UUID || '',
+              Title: incident.Title || '',
+              Description: incident.Description || '',
+              ResponsibleArea: Array.isArray(incident.ResponsibleArea) 
+                ? incident.ResponsibleArea 
+                : [incident.ResponsibleArea].filter(Boolean),
+              CreatedById: incident.CreatedById || '',
+              CreatedByName: incident.CreatedByName || '',
+              Status: incident.Status || 'Pendiente',
+              Priority: incident.Priority || 'MEDIA',
+              CreatedAt: incident.CreatedAt || '',
+              LocationTower: incident.LocationTower || '',
+              LocationFloor: incident.LocationFloor || '',
+              LocationArea: incident.LocationArea || '',
+              IsGlobal: incident.IsGlobal || false,
+              Reference: incident.Reference || '',
+              Comment: incident.Comment || null,
+              PendienteReasignacion: incident.PendienteReasignacion || false,
+              ExecutingAt: incident.ExecutingAt || undefined,
+              ResolvedAt: incident.ResolvedAt || undefined,
+              AssignedToPersonalId: incident.AssignedToPersonalId || undefined,
+              Subtype: incident.Subtype || incident.subType?.toString() || undefined,
+            }
+            incidentDetails.push(mappedIncident)
+          }
+        }
+      } catch (error) {
+        console.error(`❌ Error al obtener detalles del incidente ${item.uuid}:`, error)
+      }
+    }
+
+    return incidentDetails
+  }
+
+  // Efecto para cargar incidentes asignados desde ToList
+  useEffect(() => {
+    const fetchAssignedIncidents = async () => {
+      if (!user) {
+        setLoading(false)
+        return
+      }
+
+      try {
+        setLoading(true)
+        setError('')
+
+        // 1. Obtener información del usuario (incluye ToList)
+        console.log('👤 MY-REPORTS - Obteniendo información del usuario...')
+        const userInfo = await fetchUserInfo()
+        if (!userInfo) {
+          throw new Error('No se pudo obtener información del usuario')
+        }
+
+        console.log('📋 MY-REPORTS - ToList del usuario:', userInfo.ToList)
+
+        // 2. Obtener incidentes asignados desde ToList
+        let assignedIncidents: Incident[] = []
+        if (userInfo.ToList && userInfo.ToList.length > 0) {
+          console.log('📥 MY-REPORTS - Obteniendo detalles de incidentes asignados...')
+          assignedIncidents = await fetchAssignedIncidentsFromToList(userInfo.ToList)
+          console.log('✅ MY-REPORTS - Incidentes asignados obtenidos:', assignedIncidents.length)
+        }
+
+        setIncidents(assignedIncidents)
+      } catch (error) {
+        console.error('❌ Error al cargar incidentes asignados:', error)
+        setError('Error al cargar los incidentes asignados. Por favor, intenta nuevamente.')
+        setIncidents([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchAssignedIncidents()
+  }, [user])
 
   // Filtrar incidentes según búsqueda y estado
   const filteredIncidents = useMemo(() => {
@@ -41,7 +175,14 @@ export default function MyReportsPage() {
     }
 
     if (statusFilter !== 'all') {
-      filtered = filtered.filter((incident) => incident.Status === statusFilter.toUpperCase())
+      // Mapear filtro a valores correctos
+      const statusMap: { [key: string]: string } = {
+        'pendiente': 'Pendiente',
+        'en_atencion': 'EnAtencion',
+        'resuelto': 'Resuelto'
+      }
+      const mappedStatus = statusMap[statusFilter] || statusFilter
+      filtered = filtered.filter((incident) => incident.Status === mappedStatus)
     }
 
     return filtered
@@ -57,11 +198,11 @@ export default function MyReportsPage() {
 
   const getStatusBadge = (status: Incident['Status']) => {
     switch (status) {
-      case 'PENDIENTE':
+      case 'Pendiente':
         return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200"><Clock className="h-3 w-3 mr-1" />Pendiente</span>
-      case 'EN_ATENCION':
+      case 'EnAtencion':
         return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200"><AlertTriangle className="h-3 w-3 mr-1" />En Atención</span>
-      case 'RESUELTO':
+      case 'Resuelto':
         return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200"><CheckCircle className="h-3 w-3 mr-1" />Resuelto</span>
       default:
         return null
@@ -194,15 +335,15 @@ export default function MyReportsPage() {
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Mis Reportes</h1>
-          <p className="text-gray-600">Gestiona y sigue el estado de tus incidentes reportados</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Mis Asignaciones</h1>
+          <p className="text-gray-600">Gestiona y sigue el estado de los incidentes asignados a ti</p>
         </div>
 
         {/* Stats Summary */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-lg shadow-sm p-5 flex items-center justify-between hover:shadow-md transition-shadow">
             <div>
-              <p className="text-sm font-medium text-gray-600 mb-2">Total Reportes</p>
+              <p className="text-sm font-medium text-gray-600 mb-2">Total Asignados</p>
               <p className="text-3xl font-bold text-gray-900">{incidents.length}</p>
             </div>
             <AlertTriangle className="h-10 w-10 text-utec-secondary" strokeWidth={1.5} />
@@ -211,7 +352,7 @@ export default function MyReportsPage() {
             <div>
               <p className="text-sm font-medium text-gray-600 mb-2">Pendientes</p>
               <p className="text-3xl font-bold text-orange-600">
-                {incidents.filter((i) => i.Status === 'PENDIENTE').length}
+                {incidents.filter((i) => i.Status === 'Pendiente').length}
               </p>
             </div>
             <Clock className="h-10 w-10 text-orange-600" strokeWidth={1.5} />
@@ -220,7 +361,7 @@ export default function MyReportsPage() {
             <div>
               <p className="text-sm font-medium text-gray-600 mb-2">En Atención</p>
               <p className="text-3xl font-bold text-blue-600">
-                {incidents.filter((i) => i.Status === 'EN_ATENCION').length}
+                {incidents.filter((i) => i.Status === 'EnAtencion').length}
               </p>
             </div>
             <AlertTriangle className="h-10 w-10 text-blue-600" strokeWidth={1.5} />
@@ -229,7 +370,7 @@ export default function MyReportsPage() {
             <div>
               <p className="text-sm font-medium text-gray-600 mb-2">Resueltos</p>
               <p className="text-3xl font-bold text-green-600">
-                {incidents.filter((i) => i.Status === 'RESUELTO').length}
+                {incidents.filter((i) => i.Status === 'Resuelto').length}
               </p>
             </div>
             <CheckCircle className="h-10 w-10 text-green-600" strokeWidth={1.5} />
@@ -257,9 +398,9 @@ export default function MyReportsPage() {
                 onChange={(e) => setStatusFilter(e.target.value)}
               >
                 <option value="all">Todos los estados</option>
-                <option value="PENDIENTE">Pendiente</option>
-                <option value="EN_ATENCION">En Atención</option>
-                <option value="RESUELTO">Resuelto</option>
+                <option value="pendiente">Pendiente</option>
+                <option value="en_atencion">En Atención</option>
+                <option value="resuelto">Resuelto</option>
               </select>
             </div>
           </div>
