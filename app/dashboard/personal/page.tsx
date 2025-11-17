@@ -27,7 +27,11 @@ function PersonalDashboardContent() {
         return null
       }
 
-      const whoamiUrl = process.env.NEXT_PUBLIC_LAMBDA_WHOAMI_URL || 'https://687qtzms2l.execute-api.us-east-1.amazonaws.com/whoami'
+      const whoamiUrl = process.env.NEXT_PUBLIC_LAMBDA_WHOAMI_URL
+      if (!whoamiUrl) {
+        console.error('Variable de entorno NEXT_PUBLIC_LAMBDA_WHOAMI_URL no configurada')
+        return null
+      }
       
       const response = await fetch(whoamiUrl, {
         method: 'GET',
