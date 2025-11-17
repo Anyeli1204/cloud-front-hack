@@ -17,20 +17,20 @@ import { authenticatedFetch } from '@/lib/auth'
 import { User as UserType } from '@/types'
 
 // Funciones de mapeo del backend al frontend
-function mapBackendStatusToFrontend(status: string): 'PENDIENTE' | 'EN_ATENCION' | 'RESUELTO' {
-  const statusMap: Record<string, 'PENDIENTE' | 'EN_ATENCION' | 'RESUELTO'> = {
-    'active': 'EN_ATENCION',
-    'pending': 'PENDIENTE',
-    'Pendiente': 'PENDIENTE',
-    'PENDIENTE': 'PENDIENTE',
-    'en_atencion': 'EN_ATENCION',
-    'EnAtencion': 'EN_ATENCION',
-    'EN_ATENCION': 'EN_ATENCION',
-    'resolved': 'RESUELTO',
-    'Resuelto': 'RESUELTO',
-    'RESUELTO': 'RESUELTO',
+function mapBackendStatusToFrontend(status: string): 'Pendiente' | 'EnAtencion' | 'Resuelto' {
+  const statusMap: Record<string, 'Pendiente' | 'EnAtencion' | 'Resuelto'> = {
+    'active': 'EnAtencion',
+    'pending': 'Pendiente',
+    'Pendiente': 'Pendiente',
+    'PENDIENTE': 'Pendiente',
+    'en_atencion': 'EnAtencion',
+    'EnAtencion': 'EnAtencion',
+    'EN_ATENCION': 'EnAtencion',
+    'resolved': 'Resuelto',
+    'Resuelto': 'Resuelto',
+    'RESUELTO': 'Resuelto',
   }
-  return statusMap[status] || 'PENDIENTE'
+  return statusMap[status] || 'Pendiente'
 }
 
 function mapBackendPriorityToFrontend(priority: string): 'BAJO' | 'MEDIA' | 'ALTA' | 'CRÍTICO' {
@@ -260,7 +260,7 @@ export default function IncidentDetailPage() {
           // Mapear el incidente actualizado del backend
           const mappedIncident: Incident = {
             ...incident,
-            Status: 'RESUELTO',
+            Status: 'Resuelto',
             ResolvedAt: incidentData.ResolvedAt || new Date().toISOString()
           }
           setIncident(mappedIncident)
@@ -455,10 +455,10 @@ export default function IncidentDetailPage() {
         })
         
         // Mapear el status del backend al frontend
-        const mappedStatus = newStatus === 'EnAtencion' ? 'EN_ATENCION' : 
-                            newStatus === 'Pendiente' ? 'PENDIENTE' :
-                            newStatus === 'Resuelto' ? 'RESUELTO' :
-                            'EN_ATENCION'
+        const mappedStatus = newStatus === 'EnAtencion' ? 'EnAtencion' : 
+                            newStatus === 'Pendiente' ? 'Pendiente' :
+                            newStatus === 'Resuelto' ? 'Resuelto' :
+                            'EnAtencion'
         
         const mappedIncident: Incident = {
           ...currentIncident,
@@ -568,7 +568,7 @@ export default function IncidentDetailPage() {
   const canEdit = incident && user && 
     user.Role === 'COMMUNITY' && 
     incident.CreatedById === user.UUID && 
-    incident.Status === 'PENDIENTE'
+    incident.Status === 'Pendiente'
 
   const handleStartEdit = () => {
     setIsEditing(true)
@@ -1032,17 +1032,17 @@ export default function IncidentDetailPage() {
               <div className="flex items-center gap-3 flex-wrap">
                 <span
                   className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-semibold ${
-                    incident.Status === 'PENDIENTE'
+                    incident.Status === 'Pendiente'
                       ? 'bg-red-500 text-white'
-                      : incident.Status === 'EN_ATENCION'
+                      : incident.Status === 'EnAtencion'
                       ? 'bg-blue-500 text-white'
                       : 'bg-green-500 text-white'
                   }`}
                 >
-                  {incident.Status === 'EN_ATENCION' && <Wrench className="h-4 w-4 mr-1.5" />}
-                  {incident.Status === 'PENDIENTE'
+                  {incident.Status === 'EnAtencion' && <Wrench className="h-4 w-4 mr-1.5" />}
+                  {incident.Status === 'Pendiente'
                     ? 'Pendiente'
-                    : incident.Status === 'EN_ATENCION'
+                    : incident.Status === 'EnAtencion'
                     ? 'En Atención'
                     : 'Resuelto'}
                 </span>
@@ -1069,7 +1069,7 @@ export default function IncidentDetailPage() {
                       ? 'bg-yellow-500 text-white hover:bg-yellow-600' 
                       : 'bg-gray-400 text-white cursor-not-allowed'
                   }`}
-                  title={canEdit ? 'Editar incidente' : 'Solo puedes editar tus propios incidentes en estado PENDIENTE'}
+                  title={canEdit ? 'Editar incidente' : 'Solo puedes editar tus propios incidentes en estado Pendiente'}
                 >
                   <Edit className="h-4 w-4" />
                   <span>Editar {!canEdit && '(Bloqueado)'}</span>
@@ -1085,7 +1085,7 @@ export default function IncidentDetailPage() {
                       ? 'bg-red-500 text-white hover:bg-red-600' 
                       : 'bg-gray-400 text-white cursor-not-allowed'
                   }`}
-                  title={canEdit ? 'Eliminar incidente' : 'Solo puedes eliminar tus propios incidentes en estado PENDIENTE'}
+                  title={canEdit ? 'Eliminar incidente' : 'Solo puedes eliminar tus propios incidentes en estado Pendiente'}
                 >
                   <X className="h-4 w-4" />
                   <span>Eliminar {!canEdit && '(Bloqueado)'}</span>
@@ -1290,7 +1290,7 @@ export default function IncidentDetailPage() {
             )}
 
             {/* Asignar Personal - Solo para COORDINATOR */}
-            {user?.Role === 'COORDINATOR' && !isEditing && incident.Status === 'PENDIENTE' && (
+            {user?.Role === 'COORDINATOR' && !isEditing && incident.Status === 'Pendiente' && (
               <div className="card border-2 border-blue-200 bg-blue-50/30">
                 <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                   <div className="w-6 h-6 rounded bg-blue-500 flex items-center justify-center mr-3">
@@ -1334,7 +1334,7 @@ export default function IncidentDetailPage() {
             )}
 
             {/* Acciones de Gestión - Para AUTHORITY y COORDINATOR */}
-            {(user?.Role === 'AUTHORITY' || user?.Role === 'COORDINATOR') && !isEditing && incident.Status !== 'RESUELTO' && (
+            {(user?.Role === 'AUTHORITY' || user?.Role === 'COORDINATOR') && !isEditing && incident.Status !== 'Resuelto' && (
               <div className="card border-2 border-orange-200 bg-orange-50/30">
                 <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                   <div className="w-6 h-6 rounded bg-orange-500 flex items-center justify-center mr-3">

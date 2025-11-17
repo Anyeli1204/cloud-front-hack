@@ -42,19 +42,19 @@ function mapBackendIncidentToFrontend(backendIncident: any): Incident {
   }
 }
 
-function mapBackendStatusToFrontend(status: string): 'PENDIENTE' | 'EN_ATENCION' | 'RESUELTO' {
-  const statusMap: Record<string, 'PENDIENTE' | 'EN_ATENCION' | 'RESUELTO'> = {
-    'pending': 'PENDIENTE',
-    'Pendiente': 'PENDIENTE',
-    'PENDIENTE': 'PENDIENTE',
-    'en_atencion': 'EN_ATENCION',
-    'EnAtencion': 'EN_ATENCION',
-    'EN_ATENCION': 'EN_ATENCION',
-    'resolved': 'RESUELTO',
-    'Resuelto': 'RESUELTO',
-    'RESUELTO': 'RESUELTO',
+function mapBackendStatusToFrontend(status: string): 'Pendiente' | 'EnAtencion' | 'Resuelto' {
+  const statusMap: Record<string, 'Pendiente' | 'EnAtencion' | 'Resuelto'> = {
+    'pending': 'Pendiente',
+    'Pendiente': 'Pendiente',
+    'PENDIENTE': 'Pendiente',
+    'en_atencion': 'EnAtencion',
+    'EnAtencion': 'EnAtencion',
+    'EN_ATENCION': 'EnAtencion',
+    'resolved': 'Resuelto',
+    'Resuelto': 'Resuelto',
+    'RESUELTO': 'Resuelto',
   }
-  return statusMap[status] || 'PENDIENTE'
+  return statusMap[status] || 'Pendiente'
 }
 
 function mapBackendPriorityToFrontend(priority: string): 'BAJO' | 'MEDIA' | 'ALTA' | 'CRÍTICO' {

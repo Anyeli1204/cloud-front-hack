@@ -68,8 +68,8 @@ export default function Map({ incidents = [] }: MapProps) {
                   <p className="text-xs text-gray-600 mb-2">{incident.Description}</p>
                   <p className="text-xs text-gray-500 mb-2">{incident.LocationTower} - {incident.LocationFloor} - {incident.LocationArea}</p>
                   <div className="flex items-center gap-2">
-                    <span className={`badge badge-${incident.Status === 'PENDIENTE' ? 'pending' : incident.Status === 'EN_ATENCION' ? 'in-progress' : 'resolved'}`}>
-                      {incident.Status === 'PENDIENTE' ? 'Pendiente' : incident.Status === 'EN_ATENCION' ? 'En Atención' : 'Resuelto'}
+                    <span className={`badge badge-${incident.Status === 'Pendiente' ? 'pending' : incident.Status === 'EnAtencion' ? 'in-progress' : 'resolved'}`}>
+                      {incident.Status === 'Pendiente' ? 'Pendiente' : incident.Status === 'EnAtencion' ? 'En Atención' : 'Resuelto'}
                     </span>
                     <span className={`badge badge-${incident.Priority === 'CRÍTICO' || incident.Priority === 'ALTA' ? 'urgent' : 'pending'}`}>
                       {incident.Priority}

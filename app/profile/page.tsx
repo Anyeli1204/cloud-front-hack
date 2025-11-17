@@ -68,7 +68,7 @@ export default function ProfilePage() {
   }, [contextUser])
 
   useEffect(() => {
-    // Simulación de datos - aquí iría la llamada a la API filtrando por CreatedById y Status = RESUELTO
+    // Simulación de datos - aquí iría la llamada a la API filtrando por CreatedById y Status = Resuelto
     const mockIncidents: Incident[] = [
       {
         Type: 'Seguridad',
@@ -78,7 +78,7 @@ export default function ProfilePage() {
         ResponsibleArea: ['Seguridad'],
         CreatedById: user?.UUID || 'user1',
         CreatedByName: user?.FullName || 'Juan Pérez',
-        Status: 'RESUELTO',
+        Status: 'Resuelto',
         Priority: 'ALTA',
         IsGlobal: false,
         CreatedAt: '2024-11-14T14:30:00Z',
@@ -99,7 +99,7 @@ export default function ProfilePage() {
         ResponsibleArea: ['Infraestructura y mantenimiento'],
         CreatedById: user?.UUID || 'user1',
         CreatedByName: user?.FullName || 'Juan Pérez',
-        Status: 'RESUELTO',
+        Status: 'Resuelto',
         Priority: 'MEDIA',
         IsGlobal: false,
         CreatedAt: '2024-11-13T10:15:00Z',
@@ -120,7 +120,7 @@ export default function ProfilePage() {
         ResponsibleArea: ['Tecnologías de la Información (TI)'],
         CreatedById: user?.UUID || 'user1',
         CreatedByName: user?.FullName || 'Juan Pérez',
-        Status: 'RESUELTO',
+        Status: 'Resuelto',
         Priority: 'BAJO',
         IsGlobal: false,
         CreatedAt: '2024-11-12T09:00:00Z',
@@ -141,7 +141,7 @@ export default function ProfilePage() {
         ResponsibleArea: ['Limpieza'],
         CreatedById: user?.UUID || 'user1',
         CreatedByName: user?.FullName || 'Juan Pérez',
-        Status: 'RESUELTO',
+        Status: 'Resuelto',
         Priority: 'BAJO',
         IsGlobal: false,
         CreatedAt: '2024-11-10T16:45:00Z',
@@ -162,7 +162,7 @@ export default function ProfilePage() {
         ResponsibleArea: ['Infraestructura y mantenimiento'],
         CreatedById: user?.UUID || 'user1',
         CreatedByName: user?.FullName || 'Juan Pérez',
-        Status: 'EN_ATENCION',
+        Status: 'EnAtencion',
         Priority: 'MEDIA',
         IsGlobal: false,
         CreatedAt: '2024-11-15T08:00:00Z',
@@ -178,13 +178,13 @@ export default function ProfilePage() {
     ]
 
     // Filtrar solo incidentes resueltos
-    const resolved = mockIncidents.filter((inc) => inc.Status === 'RESUELTO')
+    const resolved = mockIncidents.filter((inc) => inc.Status === 'Resuelto')
     setResolvedIncidents(resolved)
 
     // Calcular estadísticas
     const total = mockIncidents.length
-    const pending = mockIncidents.filter((inc) => inc.Status === 'PENDIENTE').length
-    const inProgress = mockIncidents.filter((inc) => inc.Status === 'EN_ATENCION').length
+    const pending = mockIncidents.filter((inc) => inc.Status === 'Pendiente').length
+    const inProgress = mockIncidents.filter((inc) => inc.Status === 'EnAtencion').length
     const resolvedCount = resolved.length
 
     setStats({
@@ -255,11 +255,11 @@ export default function ProfilePage() {
 
   const getStatusBadge = (status: Incident['Status']) => {
     switch (status) {
-      case 'PENDIENTE':
+      case 'Pendiente':
         return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200"><Clock className="h-3 w-3 mr-1" />Pendiente</span>
-      case 'EN_ATENCION':
+      case 'EnAtencion':
         return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200"><AlertTriangle className="h-3 w-3 mr-1" />En Atención</span>
-      case 'RESUELTO':
+      case 'Resuelto':
         return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200"><CheckCircle className="h-3 w-3 mr-1" />Resuelto</span>
       default:
         return null

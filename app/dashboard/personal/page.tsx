@@ -507,11 +507,11 @@ function PersonalDashboardContent() {
                     <div className="flex flex-col items-end gap-2 ml-4">
                       <span
                         className={`badge ${
-                          incident.Status === 'Pendiente'
-                            ? 'badge-pending'
-                            : incident.Status === 'EnAtencion'
-                            ? 'badge-in-progress'
-                            : 'badge-resolved'
+                        incident.Status === 'Pendiente'
+                          ? 'badge-pending'
+                          : incident.Status === 'EnAtencion'
+                          ? 'badge-in-progress'
+                          : 'badge-resolved'
                         }`}
                       >
                         {incident.Status === 'Pendiente'

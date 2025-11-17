@@ -33,7 +33,7 @@ export default function EditIncidentPage() {
         ResponsibleArea: ['Infraestructura y mantenimiento'],
         CreatedById: 'user1',
         CreatedByName: 'Juan Pérez',
-        Status: 'PENDIENTE',
+        Status: 'Pendiente',
         Priority: 'ALTA',
         IsGlobal: false,
         CreatedAt: '2024-11-15T10:30:00Z',
@@ -82,7 +82,7 @@ export default function EditIncidentPage() {
     )
   }
 
-  if (!incident || incident.Status !== 'PENDIENTE') {
+  if (!incident || incident.Status !== 'Pendiente') {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navbar />

@@ -155,15 +155,17 @@ class WebSocketClient {
     console.log(`[WebSocket] 🔊 Emitiendo evento "${event}" a ${callbacks?.size || 0} listeners`)
     console.log(`[WebSocket] 🔊 Datos del evento:`, data)
     
-    if (callbacks && callbacks.size > 0) {
-      callbacks.forEach((callback, index) => {
-        try {
-          console.log(`[WebSocket] 🔊 Ejecutando callback ${index + 1}/${callbacks.size} para evento "${event}"`)
-          callback(data)
-        } catch (error) {
-          console.error(`[WebSocket] ❌ Error en callback ${index + 1} para evento "${event}":`, error)
-        }
-      })
+          if (callbacks && callbacks.size > 0) {
+            let callbackIndex = 0
+            callbacks.forEach((callback) => {
+              callbackIndex++
+              try {
+                console.log(`[WebSocket] 🔊 Ejecutando callback ${callbackIndex}/${callbacks.size} para evento "${event}"`)
+                callback(data)
+              } catch (error) {
+                console.error(`[WebSocket] ❌ Error en callback ${callbackIndex} para evento "${event}":`, error)
+              }
+            })
     } else {
       console.warn(`[WebSocket] ⚠️ No hay listeners registrados para el evento "${event}"`)
       console.warn(`[WebSocket] ⚠️ Listeners disponibles:`, Array.from(this.listeners.keys()))

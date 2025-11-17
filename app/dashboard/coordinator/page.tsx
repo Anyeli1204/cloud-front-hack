@@ -31,9 +31,9 @@ function CoordinatorDashboardContent() {
   const stats = useMemo(() => {
     return {
       total: allIncidents.length,
-      pending: allIncidents.filter((i) => i.Status === 'PENDIENTE').length,
-      inProgress: allIncidents.filter((i) => i.Status === 'EN_ATENCION').length,
-      resolved: allIncidents.filter((i) => i.Status === 'RESUELTO').length,
+      pending: allIncidents.filter((i) => i.Status === 'Pendiente').length,
+      inProgress: allIncidents.filter((i) => i.Status === 'EnAtencion').length,
+      resolved: allIncidents.filter((i) => i.Status === 'Resuelto').length,
       pendingReassignment: pendingReassignment.length,
     }
   }, [allIncidents, pendingReassignment.length])
@@ -233,16 +233,16 @@ function CoordinatorDashboardContent() {
                     <div className="flex flex-col items-end gap-2 ml-4">
                       <span
                         className={`badge ${
-                          incident.Status === 'PENDIENTE'
-                            ? 'badge-pending'
-                            : incident.Status === 'EN_ATENCION'
-                            ? 'badge-in-progress'
-                            : 'badge-resolved'
+                        incident.Status === 'Pendiente'
+                          ? 'badge-pending'
+                          : incident.Status === 'EnAtencion'
+                          ? 'badge-in-progress'
+                          : 'badge-resolved'
                         }`}
                       >
-                        {incident.Status === 'PENDIENTE'
+                        {incident.Status === 'Pendiente'
                           ? 'Pendiente'
-                          : incident.Status === 'EN_ATENCION'
+                          : incident.Status === 'EnAtencion'
                           ? 'En Atención'
                           : 'Resuelto'}
                       </span>
