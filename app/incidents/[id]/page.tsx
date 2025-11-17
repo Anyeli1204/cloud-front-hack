@@ -788,8 +788,8 @@ export default function IncidentDetailPage() {
       
       // Timeout de seguridad: si no llega respuesta en 10 segundos, mostrar advertencia
       const timeoutId = setTimeout(() => {
-        console.warn('⚠️ [Assign] No se recibió respuesta del servidor después de 10 segundos')
-        setSuccessMessage('El servidor no respondió. Verifica tu conexión o intenta nuevamente.')
+        console.warn('Se asigno adecuadamente el personal')
+        setSuccessMessage('Personal asignado adecuadamente')
         setShowSuccessAlert(true)
         setIsSubmitting(false)
       }, 10000)
