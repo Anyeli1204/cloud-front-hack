@@ -27,7 +27,7 @@ function AuthorityDashboardContent() {
         ResponsibleArea: ['Infraestructura y mantenimiento'],
         CreatedById: 'user1',
         CreatedByName: 'Juan Pérez',
-        Status: 'PENDIENTE',
+        Status: 'Pendiente',
         Priority: 'ALTA',
         IsGlobal: false,
         CreatedAt: '2024-11-15T10:30:00Z',
@@ -46,7 +46,7 @@ function AuthorityDashboardContent() {
         ResponsibleArea: ['Infraestructura y mantenimiento'],
         CreatedById: 'user2',
         CreatedByName: 'María García',
-        Status: 'EN_ATENCION',
+        Status: 'EnAtencion',
         Priority: 'MEDIA',
         IsGlobal: false,
         CreatedAt: '2024-11-15T09:15:00Z',
@@ -67,7 +67,7 @@ function AuthorityDashboardContent() {
         ResponsibleArea: ['Infraestructura y mantenimiento'],
         CreatedById: 'user3',
         CreatedByName: 'Carlos López',
-        Status: 'RESUELTO',
+        Status: 'Resuelto',
         Priority: 'ALTA',
         IsGlobal: true,
         CreatedAt: '2024-11-14T14:20:00Z',
@@ -88,9 +88,9 @@ function AuthorityDashboardContent() {
 
   const stats = {
     total: incidents.length,
-    pending: incidents.filter((i) => i.Status === 'PENDIENTE').length,
-    inProgress: incidents.filter((i) => i.Status === 'EN_ATENCION').length,
-    resolved: incidents.filter((i) => i.Status === 'RESUELTO').length,
+    pending: incidents.filter((i) => i.Status === 'Pendiente').length,
+    inProgress: incidents.filter((i) => i.Status === 'EnAtencion').length,
+    resolved: incidents.filter((i) => i.Status === 'Resuelto').length,
     critical: incidents.filter((i) => i.Priority === 'CRÍTICO').length,
     global: globalIncidents.length,
   }
@@ -213,16 +213,16 @@ function AuthorityDashboardContent() {
                     </h3>
                     <span
                       className={`badge ${
-                        incident.Status === 'PENDIENTE'
+                        incident.Status === 'Pendiente'
                           ? 'badge-pending'
-                          : incident.Status === 'EN_ATENCION'
+                          : incident.Status === 'EnAtencion'
                           ? 'badge-in-progress'
                           : 'badge-resolved'
                       }`}
                     >
-                      {incident.Status === 'PENDIENTE'
+                      {incident.Status === 'Pendiente'
                         ? 'Pendiente'
-                        : incident.Status === 'EN_ATENCION'
+                        : incident.Status === 'EnAtencion'
                         ? 'En Atención'
                         : 'Resuelto'}
                     </span>

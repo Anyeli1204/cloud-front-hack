@@ -14,61 +14,175 @@ function PersonalDashboardContent() {
   const { user } = useUser()
   const [assignedIncidents, setAssignedIncidents] = useState<Incident[]>([])
   const [areaIncidents, setAreaIncidents] = useState<Incident[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string>('')
 
   useEffect(() => {
-    // Simulación de datos - aquí iría la llamada a la API filtrando por AssignedToPersonalId y Area
-    setAssignedIncidents([
-      {
-        Type: 'Fuga de agua',
-        UUID: '1',
-        Title: 'Fuga de agua en el baño del segundo piso',
-        Description: 'Fuga de agua en el baño del segundo piso',
-        ResponsibleArea: ['Infraestructura y mantenimiento'],
-        CreatedById: 'user1',
-        CreatedByName: 'Juan Pérez',
-        Status: 'EN_ATENCION',
-        Priority: 'ALTA',
-        IsGlobal: false,
-        CreatedAt: '2024-11-15T10:30:00Z',
-        ExecutingAt: '2024-11-15T11:00:00Z',
-        LocationTower: 'Torre A',
-        LocationFloor: 'Piso 2',
-        LocationArea: 'Baño',
-        Reference: 'REF-001',
-        AssignedToPersonalId: user?.UUID || 'personal1',
-        PendienteReasignacion: false,
-        Comment: [],
-      },
-    ])
+    const fetchAreaIncidents = async () => {
+      if (!user || !user.Area) {
+        setLoading(false)
+        setError('Usuario sin área definida')
+        return
+      }
 
-    setAreaIncidents([
-      {
-        Type: 'Luz dañada',
-        UUID: '2',
-        Title: 'Lámpara fundida en el pasillo principal',
-        Description: 'Lámpara fundida en el pasillo principal',
-        ResponsibleArea: ['Infraestructura y mantenimiento'],
-        CreatedById: 'user2',
-        CreatedByName: 'María García',
-        Status: 'PENDIENTE',
-        Priority: 'MEDIA',
-        IsGlobal: false,
-        CreatedAt: '2024-11-15T09:15:00Z',
-        LocationTower: 'Torre B',
-        LocationFloor: 'Piso 1',
-        LocationArea: 'Pasillo',
-        Reference: 'REF-002',
-        PendienteReasignacion: false,
-        Comment: [],
-      },
-    ])
+      try {
+        setLoading(true)
+        setError('')
+        const token = localStorage.getItem('auth_token')
+        if (!token) {
+          console.error('No hay token de autenticación')
+          return
+        }
+
+        // Obtener incidentes por área
+        const incidentsUrl = process.env.NEXT_PUBLIC_LAMBDA_INCIDENTS_URL
+        if (!incidentsUrl) {
+          console.error('Variable de entorno NEXT_PUBLIC_LAMBDA_INCIDENTS_URL no configurada')
+          return
+        }
+
+        // Llamar al endpoint con filtro por status=Pendiente para mostrar solo incidentes pendientes
+        const url = `${incidentsUrl}?status=Pendiente`
+        
+        console.log('📡 PERSONAL - Llamada a API:', {
+          userArea: user.Area,
+          url,
+          token: token ? 'presente' : 'ausente'
+        })
+        
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+        })
+
+        console.log('📄 PERSONAL - Respuesta API:', {
+          status: response.status,
+          ok: response.ok
+        })
+
+        if (!response.ok) {
+          throw new Error(`Error ${response.status}: ${response.statusText}`)
+        }
+
+        const incidents = await response.json()
+        
+        // Debug: Verificar los estados que llegan del backend
+        console.log('🔍 Estados exactos del backend:', incidents.map((inc: any) => ({ 
+          title: inc.Title,
+          status: `"${inc.Status}"`,
+          statusType: typeof inc.Status
+        })))
+        
+        // Mapear los datos del backend al formato frontend
+        const mappedIncidents: Incident[] = incidents.map((incident: any) => ({
+          Type: incident.tenant_id || incident.Type || '',
+          UUID: incident.uuid || incident.UUID || '',
+          Title: incident.Title || '',
+          Description: incident.Description || '',
+          ResponsibleArea: Array.isArray(incident.ResponsibleArea) 
+            ? incident.ResponsibleArea 
+            : [incident.ResponsibleArea].filter(Boolean),
+          CreatedById: incident.CreatedById || '',
+          CreatedByName: incident.CreatedByName || '',
+          Status: incident.Status || 'Pendiente', // El backend ya envía el estado en español
+          Priority: incident.Priority || 'MEDIA',
+          IsGlobal: incident.IsGlobal || false,
+          CreatedAt: incident.CreatedAt || '',
+          ExecutingAt: incident.ExecutingAt || undefined,
+          ResolvedAt: incident.ResolvedAt || undefined,
+          LocationTower: incident.LocationTower || '',
+          LocationFloor: incident.LocationFloor || '',
+          LocationArea: incident.LocationArea || '',
+          Reference: incident.Reference || '',
+          AssignedToPersonalId: incident.AssignedToPersonalId || undefined,
+          PendienteReasignacion: incident.PendienteReasignacion || false,
+          Subtype: incident.Subtype || incident.subType?.toString() || undefined,
+          Comment: Array.isArray(incident.Comment) ? incident.Comment : [],
+        }))
+
+        console.log('📋 PERSONAL - Incidentes mapeados:', mappedIncidents.map(inc => ({
+          UUID: inc.UUID,
+          Title: inc.Title,
+          ResponsibleArea: inc.ResponsibleArea,
+          AssignedToPersonalId: inc.AssignedToPersonalId
+        })))
+        
+        // Separar incidentes asignados específicamente al usuario vs incidentes del área
+        const assigned = mappedIncidents.filter(inc => inc.AssignedToPersonalId === user.UUID)
+        console.log('🎯 PERSONAL - Incidentes asignados a mí:', assigned.length)
+        
+        // Mapear posibles variaciones de nombres de área
+        const areaMap: { [key: string]: string } = {
+          'TI': 'Tecnologías de la Información (TI)',
+          'Tecnologías de la Información': 'Tecnologías de la Información (TI)',
+          'Infraestructura': 'Infraestructura y mantenimiento',
+          'Mantenimiento': 'Infraestructura y mantenimiento',
+          'Laboratorios': 'Laboratorios y talleres',
+          'Talleres': 'Laboratorios y talleres',
+          'Servicio médico': 'Servicio médico/Tópico',
+          'Tópico': 'Servicio médico/Tópico',
+        }
+        
+        const userAreaNormalized = areaMap[user.Area!] || user.Area!
+        console.log('🏷️ PERSONAL - Área del usuario:', {
+          original: user.Area,
+          normalizada: userAreaNormalized
+        })
+        
+        const areaOnly = mappedIncidents.filter(inc => {
+          const isAreaMatch = inc.ResponsibleArea.some(area => {
+            const matches = area === userAreaNormalized || 
+                           areaMap[area] === userAreaNormalized ||
+                           area === user.Area ||
+                           area.toLowerCase().includes(user.Area!.toLowerCase()) ||
+                           user.Area!.toLowerCase().includes(area.toLowerCase())
+            
+            if (matches) {
+              console.log('✅ PERSONAL - Match encontrado:', {
+                incidentArea: area,
+                userArea: user.Area,
+                incidentTitle: inc.Title
+              })
+            }
+            return matches
+          })
+          
+          return !inc.AssignedToPersonalId && isAreaMatch
+        })
+        
+        console.log('🏢 PERSONAL - Incidentes del área:', areaOnly.length)
+        
+        console.log('📊 PERSONAL - Resumen final:', {
+          totalIncidentsFromAPI: incidents.length,
+          mappedIncidents: mappedIncidents.length,
+          assignedToMe: assigned.length,
+          areaIncidents: areaOnly.length
+        })
+        
+        setAssignedIncidents(assigned)
+        setAreaIncidents(areaOnly)
+        
+      } catch (error) {
+        console.error('Error al cargar incidentes del área:', error)
+        setError('Error al cargar los incidentes. Por favor, intenta nuevamente.')
+        setAssignedIncidents([])
+        setAreaIncidents([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchAreaIncidents()
   }, [user])
 
   const stats = {
     assigned: assignedIncidents.length,
-    assignedPending: assignedIncidents.filter((i) => i.Status === 'PENDIENTE').length,
-    assignedInProgress: assignedIncidents.filter((i) => i.Status === 'EN_ATENCION').length,
-    assignedResolved: assignedIncidents.filter((i) => i.Status === 'RESUELTO').length,
+    assignedPending: assignedIncidents.filter((i) => i.Status === 'Pendiente').length,
+    assignedInProgress: assignedIncidents.filter((i) => i.Status === 'EnAtencion').length,
+    assignedResolved: assignedIncidents.filter((i) => i.Status === 'Resuelto').length,
     areaTotal: areaIncidents.length,
   }
 
@@ -93,6 +207,29 @@ function PersonalDashboardContent() {
           <p className="text-xl text-gray-600">Gestiona los incidentes asignados a tu área: {user?.Area}</p>
         </div>
 
+        {/* Loading State */}
+        {loading && (
+          <div className="flex justify-center items-center h-64">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-utec-primary mx-auto mb-4"></div>
+              <p className="text-gray-600">Cargando incidentes de tu área...</p>
+            </div>
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && !loading && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <AlertTriangle className="h-5 w-5 text-red-500 mr-2" />
+              <p className="text-red-700">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Content - only show when not loading */}
+        {!loading && !error && (
+          <>
         {/* Welcome Card */}
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-utec-secondary via-utec-light to-utec-secondary text-white mb-8 animate-slide-up shadow-xl">
           <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent"></div>
@@ -188,16 +325,16 @@ function PersonalDashboardContent() {
                     <div className="flex flex-col items-end gap-2 ml-4">
                       <span
                         className={`badge ${
-                          incident.Status === 'PENDIENTE'
+                          incident.Status === 'Pendiente'
                             ? 'badge-pending'
-                            : incident.Status === 'EN_ATENCION'
+                            : incident.Status === 'EnAtencion'
                             ? 'badge-in-progress'
                             : 'badge-resolved'
                         }`}
                       >
-                        {incident.Status === 'PENDIENTE'
+                        {incident.Status === 'Pendiente'
                           ? 'Pendiente'
-                          : incident.Status === 'EN_ATENCION'
+                          : incident.Status === 'EnAtencion'
                           ? 'En Atención'
                           : 'Resuelto'}
                       </span>
@@ -214,24 +351,24 @@ function PersonalDashboardContent() {
                   </div>
                   <div className="flex items-center justify-between pt-3 border-t">
                     <Link
-                      href={`/incidents/${incident.UUID}`}
+                      href={`/incidents/${encodeURIComponent(incident.UUID)}`}
                       className="flex items-center space-x-2 text-green-600 hover:text-green-700 font-medium text-sm"
                     >
                       <MessageSquare className="h-4 w-4" />
                       <span>Ver Detalles</span>
                     </Link>
                     <div className="flex space-x-2">
-                      {incident.Status !== 'EN_ATENCION' && (
+                      {incident.Status !== 'EnAtencion' && (
                         <button
-                          onClick={() => handleUpdateStatus(incident.UUID, 'EN_ATENCION')}
+                          onClick={() => handleUpdateStatus(incident.UUID, 'EnAtencion')}
                           className="px-4 py-2 bg-utec-secondary text-white rounded-lg hover:bg-utec-primary transition-colors text-sm"
                         >
                           Tomar en Atención
                         </button>
                       )}
-                      {incident.Status !== 'RESUELTO' && (
+                      {incident.Status !== 'Resuelto' && (
                         <button
-                          onClick={() => handleUpdateStatus(incident.UUID, 'RESUELTO')}
+                          onClick={() => handleUpdateStatus(incident.UUID, 'Resuelto')}
                           className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm"
                         >
                           Marcar como Resuelto
@@ -261,7 +398,7 @@ function PersonalDashboardContent() {
               areaIncidents.map((incident) => (
                 <Link
                   key={incident.UUID}
-                  href={`/incidents/${incident.UUID}`}
+                  href={`/incidents/${encodeURIComponent(incident.UUID)}`}
                   className="block p-4 border-2 border-gray-100 rounded-xl hover:border-purple-500 hover:shadow-lg transition-all group"
                 >
                   <div className="flex items-start justify-between mb-2">
@@ -270,16 +407,16 @@ function PersonalDashboardContent() {
                     </h3>
                     <span
                       className={`badge ${
-                        incident.Status === 'PENDIENTE'
+                        incident.Status === 'Pendiente'
                           ? 'badge-pending'
-                          : incident.Status === 'EN_ATENCION'
+                          : incident.Status === 'EnAtencion'
                           ? 'badge-in-progress'
                           : 'badge-resolved'
                       }`}
                     >
-                      {incident.Status === 'PENDIENTE'
+                      {incident.Status === 'Pendiente'
                         ? 'Pendiente'
-                        : incident.Status === 'EN_ATENCION'
+                        : incident.Status === 'EnAtencion'
                         ? 'En Atención'
                         : 'Resuelto'}
                     </span>
@@ -293,6 +430,8 @@ function PersonalDashboardContent() {
             )}
           </div>
         </div>
+          </>
+        )}
       </div>
     </div>
   )

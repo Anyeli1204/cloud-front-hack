@@ -54,7 +54,7 @@ export default function IncidentDetailPage() {
   const params = useParams()
   const router = useRouter()
   const { user } = useUser()
-  const { incidents: allIncidents } = useIncidents()
+  const { incidents: allIncidents, loading: incidentsLoading } = useIncidents()
   const [incident, setIncident] = useState<Incident | null>(null)
   const [loading, setLoading] = useState(true)
   const [isEditing, setIsEditing] = useState(false)
@@ -81,21 +81,28 @@ export default function IncidentDetailPage() {
           return
         }
 
+        // Esperar a que se carguen los incidentes si aún están cargando
+        if (incidentsLoading) {
+          console.log('⏳ Esperando a que se carguen los incidentes...')
+          return
+        }
+
         const incidentId = params.id as string
         
         // Decodificar el UUID que viene encodado desde la URL
         const uuid = decodeURIComponent(incidentId)
         
-
+        console.log('🔍 DEBUG - IncidentId original:', incidentId)
+        console.log('🔍 DEBUG - UUID decodificado:', uuid)
+        console.log('🔍 DEBUG - AllIncidents disponibles:', allIncidents.map(inc => inc.UUID))
         
         // Intentar obtener el tenant_id del incidente existente en la lista
         existingIncident = allIncidents.find(inc => inc.UUID === uuid)
         let tenantId = existingIncident?.Type || 'Limpieza' // El Type contiene el tenant_id original
         
-
+        console.log('🔍 DEBUG - Incidente encontrado:', existingIncident ? 'SÍ' : 'NO')
+        console.log('🔍 DEBUG - TenantId usado:', tenantId)
         
-        // Si no encontramos el incidente en la lista, intentamos diferentes estrategias
-
         
         const incidentDetailUrl = process.env.NEXT_PUBLIC_LAMBDA_INCIDENT_ESPECIFIC_URL
         
@@ -107,7 +114,8 @@ export default function IncidentDetailPage() {
         // Construir URL con query parameters según el Lambda
         const url = `${incidentDetailUrl}?tenant_id=${encodeURIComponent(tenantId)}&uuid=${encodeURIComponent(uuid)}`
         
-
+        console.log('🌐 DEBUG - URL construida:', url)
+        console.log('🌐 DEBUG - Endpoint base:', incidentDetailUrl)
         
         // Llamar al endpoint para obtener el incidente específico
         const response = await fetch(url, {
@@ -192,7 +200,7 @@ export default function IncidentDetailPage() {
     }
 
     fetchIncidentDetails()
-  }, [params.id, user, allIncidents])
+  }, [params.id, user, allIncidents, incidentsLoading])
 
   // Función para mostrar notificaciones bonitas
   const showNotification = (type: 'success' | 'error', message: string) => {
