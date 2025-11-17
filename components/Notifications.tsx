@@ -1,13 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Bell, X, AlertTriangle, CheckCircle, Clock } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Bell, X, AlertTriangle, CheckCircle, Clock, Info } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
+import { wsClient } from '@/lib/websocket'
+import { useUser } from '@/contexts/UserContext'
 
 interface Notification {
   id: string
-  type: 'status_change' | 'comment' | 'assignment'
+  type: 'new_incident' | 'incident_resolved' | 'incident_updated' | 'other'
   title: string
   message: string
   incidentId: string
@@ -16,69 +18,177 @@ interface Notification {
   read: boolean
 }
 
+const STORAGE_KEY = 'websocket_notifications'
+
 export default function Notifications() {
+  const { user } = useUser()
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [isOpen, setIsOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
 
+  // Cargar notificaciones desde localStorage al inicio
   useEffect(() => {
-    // Simulación de notificaciones - aquí iría la llamada a la API o WebSocket
-    const mockNotifications: Notification[] = [
-      {
-        id: '1',
-        type: 'status_change',
-        title: 'Estado actualizado',
-        message: 'Tu incidente "Fuga de agua en el baño" cambió a "En Atención"',
-        incidentId: '1',
-        incidentTitle: 'Fuga de agua en el baño',
-        createdAt: '2024-11-15T11:00:00Z',
-        read: false,
-      },
-      {
-        id: '2',
-        type: 'comment',
-        title: 'Nuevo comentario',
-        message: 'Se ha agregado un comentario a tu incidente "Lámpara fundida"',
-        incidentId: '2',
-        incidentTitle: 'Lámpara fundida',
-        createdAt: '2024-11-15T10:30:00Z',
-        read: false,
-      },
-      {
-        id: '3',
-        type: 'status_change',
-        title: 'Incidente resuelto',
-        message: 'Tu incidente "Ascensor fuera de servicio" ha sido resuelto',
-        incidentId: '3',
-        incidentTitle: 'Ascensor fuera de servicio',
-        createdAt: '2024-11-15T08:00:00Z',
-        read: true,
-      },
-    ]
-    setNotifications(mockNotifications)
-    setUnreadCount(mockNotifications.filter((n) => !n.read).length)
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsed: Notification[] = JSON.parse(saved)
+        setNotifications(parsed)
+        setUnreadCount(parsed.filter(n => !n.read).length)
+      }
+    } catch (error) {
+      console.error('[Notifications] Error cargando desde localStorage:', error)
+    }
   }, [])
 
-  const markAsRead = (id: string) => {
-    setNotifications(
-      notifications.map((n) => (n.id === id ? { ...n, read: true } : n))
-    )
-    setUnreadCount(Math.max(0, unreadCount - 1))
-  }
+  // Persistir notificaciones en localStorage
+  const persistNotifications = useCallback((notifs: Notification[]) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(notifs))
+    } catch (error) {
+      console.error('[Notifications] Error guardando en localStorage:', error)
+    }
+  }, [])
 
-  const markAllAsRead = () => {
-    setNotifications(notifications.map((n) => ({ ...n, read: true })))
-    setUnreadCount(0)
-  }
+  // Agregar nueva notificación
+  const addNotification = useCallback((notification: Notification) => {
+    console.log('[Notifications] 🔔 Nueva notificación:', notification.title)
+    setNotifications(prev => {
+      const updated = [notification, ...prev].slice(0, 50) // Mantener máximo 50
+      persistNotifications(updated)
+      setUnreadCount(updated.filter(n => !n.read).length)
+      return updated
+    })
+  }, [persistNotifications])
 
+  // Suscribirse a eventos WebSocket
+  useEffect(() => {
+    if (!user || user.Role !== 'AUTHORITY') {
+      console.log('[Notifications] Usuario no es AUTHORITY, no suscribiendo a notificaciones')
+      return
+    }
+
+    console.log('[Notifications] 🎧 Suscribiendo a eventos WebSocket para AUTHORITY')
+
+    // Handler para nuevos incidentes
+    const handleNewIncident = (data: any) => {
+      console.log('[Notifications] 📥 Nuevo incidente recibido:', data)
+      const incident = data.incident || data.data || data
+      const incidentId = incident?.uuid || incident?.UUID || 'unknown'
+      const title = incident?.Title || incident?.title || 'Nuevo incidente'
+      
+      addNotification({
+        id: `new-${incidentId}-${Date.now()}`,
+        type: 'new_incident',
+        title: 'Nuevo Incidente',
+        message: `"${title}"`,
+        incidentId,
+        incidentTitle: title,
+        createdAt: new Date().toISOString(),
+        read: false
+      })
+    }
+
+    // Handler para incidentes resueltos
+    const handleResolvedIncident = (data: any) => {
+      console.log('[Notifications] ✅ Incidente resuelto recibido:', data)
+      const incident = data.incident || data.data || data
+      const incidentId = incident?.uuid || incident?.UUID || 'unknown'
+      const title = incident?.Title || incident?.title || 'Incidente resuelto'
+      
+      addNotification({
+        id: `resolved-${incidentId}-${Date.now()}`,
+        type: 'incident_resolved', 
+        title: 'Incidente Resuelto',
+        message: `"${title}" ha sido resuelto`,
+        incidentId,
+        incidentTitle: title,
+        createdAt: new Date().toISOString(),
+        read: false
+      })
+    }
+
+    // Handler para incidentes actualizados/editados
+    const handleUpdatedIncident = (data: any) => {
+      console.log('[Notifications] 🔄 Incidente actualizado recibido:', data)
+      const incident = data.incident || data.data || data
+      const incidentId = incident?.uuid || incident?.UUID || 'unknown'
+      const title = incident?.Title || incident?.title || 'Incidente actualizado'
+      
+      addNotification({
+        id: `updated-${incidentId}-${Date.now()}`,
+        type: 'incident_updated',
+        title: 'Incidente Actualizado',
+        message: `"${title}" ha sido modificado`,
+        incidentId,
+        incidentTitle: title,
+        createdAt: new Date().toISOString(),
+        read: false
+      })
+    }
+
+    // Suscribirse a eventos
+    wsClient.on('NewIncident', handleNewIncident)
+    wsClient.on('PublishIncident', handleNewIncident)
+    wsClient.on('SolvedIncident', handleResolvedIncident)
+    wsClient.on('EditIncidentContent', handleUpdatedIncident)
+    wsClient.on('StaffChooseIncident', handleUpdatedIncident)
+    wsClient.on('CoordinatorAssignIncident', handleUpdatedIncident)
+
+    // Cleanup
+    return () => {
+      console.log('[Notifications] 🔇 Desuscribiendo de eventos WebSocket')
+      wsClient.off('NewIncident', handleNewIncident)
+      wsClient.off('PublishIncident', handleNewIncident)
+      wsClient.off('SolvedIncident', handleResolvedIncident)
+      wsClient.off('EditIncidentContent', handleUpdatedIncident)
+      wsClient.off('StaffChooseIncident', handleUpdatedIncident)
+      wsClient.off('CoordinatorAssignIncident', handleUpdatedIncident)
+    }
+  }, [user, addNotification])
+
+  // Marcar una notificación como leída
+  const markAsRead = useCallback((id: string) => {
+    setNotifications(prev => {
+      const updated = prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+      persistNotifications(updated)
+      setUnreadCount(updated.filter(n => !n.read).length)
+      return updated
+    })
+  }, [persistNotifications])
+
+  // Marcar todas como leídas
+  const markAllAsRead = useCallback(() => {
+    console.log('[Notifications] 👁️ Marcando todas las notificaciones como leídas')
+    setNotifications(prev => {
+      const updated = prev.map((n) => ({ ...n, read: true }))
+      persistNotifications(updated)
+      setUnreadCount(0)
+      return updated
+    })
+  }, [persistNotifications])
+
+  // Al abrir la campana, marcar todas como leídas automáticamente
+  const handleToggleOpen = useCallback(() => {
+    console.log('[Notifications] 🔔 Abriendo/cerrando campana')
+    const newIsOpen = !isOpen
+    setIsOpen(newIsOpen)
+    
+    // Si se abre la campana, marcar todas como leídas
+    if (newIsOpen && unreadCount > 0) {
+      console.log('[Notifications] 👁️ Marcando automáticamente como leídas al abrir')
+      markAllAsRead()
+    }
+  }, [isOpen, unreadCount, markAllAsRead])
+
+  // Iconos para diferentes tipos de notificaciones
   const getNotificationIcon = (type: string) => {
     switch (type) {
-      case 'status_change':
-        return <Clock className="h-5 w-5 text-blue-500" />
-      case 'comment':
-        return <AlertTriangle className="h-5 w-5 text-yellow-500" />
-      case 'assignment':
+      case 'new_incident':
+        return <AlertTriangle className="h-5 w-5 text-orange-500" />
+      case 'incident_resolved':
         return <CheckCircle className="h-5 w-5 text-green-500" />
+      case 'incident_updated':
+        return <Info className="h-5 w-5 text-blue-500" />
       default:
         return <Bell className="h-5 w-5 text-gray-500" />
     }
@@ -87,12 +197,18 @@ export default function Notifications() {
   return (
     <div className="relative">
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={handleToggleOpen}
         className="relative p-2 rounded-xl text-gray-700 hover:bg-gray-100 hover:text-utec-blue transition-colors"
+        title={unreadCount > 0 ? `${unreadCount} notificaciones nuevas` : 'Notificaciones'}
       >
         <Bell className="h-5 w-5" />
         {unreadCount > 0 && (
-          <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+          <>
+            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          </>
         )}
       </button>
 
@@ -127,7 +243,12 @@ export default function Notifications() {
               {notifications.length === 0 ? (
                 <div className="p-8 text-center">
                   <Bell className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600">No hay notificaciones</p>
+                  <p className="text-gray-600 font-medium">No hay notificaciones</p>
+                  <p className="text-gray-500 text-sm mt-2">
+                    {user?.Role === 'AUTHORITY' 
+                      ? 'Te notificaremos sobre nuevos incidentes y resoluciones' 
+                      : 'Conéctate como AUTHORITY para recibir notificaciones'}
+                  </p>
                 </div>
               ) : (
                 <div className="divide-y divide-gray-100">

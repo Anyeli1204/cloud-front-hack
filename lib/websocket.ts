@@ -1,3 +1,5 @@
+'use client'
+
 import { getToken } from './auth'
 
 class WebSocketClient {
@@ -41,10 +43,13 @@ class WebSocketClient {
 
     try {
       const wsUrl = `${this.url}?token=${encodeURIComponent(token)}`
+      console.log('[WebSocket] 🔗 Conectando a:', this.url)
+      console.log('[WebSocket] 🔑 Token (primeros 10 chars):', token.substring(0, 10) + '...')
       
       this.ws = new WebSocket(wsUrl)
 
       this.ws.onopen = () => {
+        console.log('[WebSocket] ✅ Conexión establecida - servidor ejecutó $connect')
         this.isConnecting = false
         this.reconnectAttempts = 0
       }
@@ -62,12 +67,38 @@ class WebSocketClient {
       }
 
       this.ws.onclose = (event) => {
+        console.log('[WebSocket] 🔌 Conexión cerrada:', {
+          code: event.code,
+          reason: event.reason, 
+          wasClean: event.wasClean,
+          timestamp: new Date().toISOString()
+        })
+        
+        // Interpretar códigos de cierre
+        if (event.code === 1000) {
+          console.log('[WebSocket] ✅ Cierre normal (1000) - $disconnect DEBERÍA haberse ejecutado en el servidor')
+        } else if (event.code === 1001) {
+          console.log('[WebSocket] 📱 Cierre por "going away" (1001)')
+        } else if (event.code === 1006) {
+          console.warn('[WebSocket] ⚠️ Cierre abrupto (1006) - conexión perdida sin close frame')
+        } else {
+          console.warn('[WebSocket] ❓ Código de cierre inusual:', event.code)
+        }
+        
         this.isConnecting = false
         this.ws = null
         
-        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+        // Solo reintentar si NO es un logout explícito del usuario
+        const isUserLogout = event.code === 1000 && event.reason === 'User logout'
+        
+        if (!isUserLogout && this.reconnectAttempts < this.maxReconnectAttempts) {
           this.reconnectAttempts++
+          console.log(`[WebSocket] 🔄 Reintentando conexión ${this.reconnectAttempts}/${this.maxReconnectAttempts} en ${this.reconnectDelay}ms`)
           setTimeout(() => this.connect(), this.reconnectDelay)
+        } else if (isUserLogout) {
+          console.log('[WebSocket] 🚪 Logout del usuario - no reintentando conexión')
+        } else {
+          console.log('[WebSocket] 🛑 Máximo de reintentos alcanzado')
         }
       }
     } catch (error) {
@@ -113,17 +144,46 @@ class WebSocketClient {
 
   send(message: any) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      console.log('[WebSocket] 📤 Enviando mensaje:', message)
       this.ws.send(JSON.stringify(message))
+    } else {
+      console.warn('[WebSocket] ⚠️ Intento de envío con conexión cerrada')
     }
   }
 
   disconnect() {
+    console.log('[WebSocket] 🔌 Iniciando disconnect explícito')
+    
     if (this.ws) {
-      this.ws.close()
+      const currentState = this.ws.readyState
+      console.log('[WebSocket] 📊 Estado actual del WebSocket:', {
+        'CONNECTING': WebSocket.CONNECTING,
+        'OPEN': WebSocket.OPEN, 
+        'CLOSING': WebSocket.CLOSING,
+        'CLOSED': WebSocket.CLOSED,
+        'current': currentState
+      })
+      
+      if (currentState === WebSocket.OPEN) {
+        console.log('[WebSocket] 🎯 Cerrando conexión OPEN - esto DEBE activar $disconnect en el servidor')
+        // Usar código 1000 (cierre normal) para asegurar que API Gateway ejecute $disconnect
+        this.ws.close(1000, 'User logout')
+      } else if (currentState === WebSocket.CONNECTING) {
+        console.log('[WebSocket] ⏳ Cerrando conexión en estado CONNECTING')
+        this.ws.close(1000, 'User logout')
+      } else {
+        console.log('[WebSocket] ℹ️ Conexión ya cerrada o cerrándose, estado:', currentState)
+      }
+      
       this.ws = null
+    } else {
+      console.log('[WebSocket] ⚠️ No hay conexión WebSocket para cerrar')
     }
+    
     this.listeners.clear()
     this.reconnectAttempts = this.maxReconnectAttempts
+    
+    console.log('[WebSocket] ✅ Disconnect completado')
   }
 
   isConnected(): boolean {

@@ -8,66 +8,346 @@ import Link from 'next/link'
 import { format } from 'date-fns'
 import { Incident, Comment } from '@/types'
 import { useUser } from '@/contexts/UserContext'
+import { useIncidents } from '@/hooks/useIncidents'
+import { formatPeruTime, formatWaitingTime, calculateWaitingMinutes } from '@/lib/dateUtils'
+import { editIncidentContent } from '@/lib/websocket-events'
+import { wsClient } from '@/lib/websocket'
+
+// Funciones de mapeo del backend al frontend
+function mapBackendStatusToFrontend(status: string): 'Pendiente' | 'EnAtencion' | 'Resuelto' {
+  const statusMap: Record<string, 'Pendiente' | 'EnAtencion' | 'Resuelto'> = {
+    'active': 'EnAtencion',
+    'pending': 'Pendiente',
+    'Pendiente': 'Pendiente',
+    'PENDIENTE': 'Pendiente',
+    'en_atencion': 'EnAtencion',
+    'EnAtencion': 'EnAtencion',
+    'EN_ATENCION': 'EnAtencion',
+    'resolved': 'Resuelto',
+    'Resuelto': 'Resuelto',
+    'RESUELTO': 'Resuelto',
+  }
+  return statusMap[status] || 'Pendiente'
+}
+
+function mapBackendPriorityToFrontend(priority: string): 'BAJO' | 'MEDIA' | 'ALTA' | 'CRÍTICO' {
+  const priorityMap: Record<string, 'BAJO' | 'MEDIA' | 'ALTA' | 'CRÍTICO'> = {
+    'baja': 'BAJO',
+    'low': 'BAJO',
+    'BAJO': 'BAJO',
+    'BAJA': 'BAJO',
+    'media': 'MEDIA',
+    'medium': 'MEDIA',
+    'MEDIA': 'MEDIA',
+    'alta': 'ALTA',
+    'high': 'ALTA',
+    'ALTA': 'ALTA',
+    'critico': 'CRÍTICO',
+    'critical': 'CRÍTICO',
+    'CRÍTICO': 'CRÍTICO',
+    'crítico': 'CRÍTICO',
+  }
+  return priorityMap[priority?.toLowerCase() || ''] || 'MEDIA'
+}
 
 export default function IncidentDetailPage() {
   const params = useParams()
   const router = useRouter()
   const { user } = useUser()
+  const { incidents: allIncidents } = useIncidents()
   const [incident, setIncident] = useState<Incident | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
-    // Simulación de carga de datos - aquí iría la llamada a la API
-    setTimeout(() => {
-      setIncident({
-        Type: 'Infraestructura y mantenimiento',
-        UUID: params.id as string,
-        Title: 'Fuga de agua en el baño del segundo piso',
-        Description: 'Fuga de agua en el baño del segundo piso. El agua está goteando constantemente desde el techo.',
-        ResponsibleArea: ['Infraestructura y mantenimiento'],
-        CreatedById: 'user1',
-        CreatedByName: 'Juan Pérez',
-        Status: 'EN_ATENCION',
-        Priority: 'ALTA',
-        IsGlobal: false,
-        CreatedAt: '2024-11-15T10:30:00Z',
-        ExecutingAt: '2024-11-15T10:35:00Z',
-        LocationTower: 'Torre A',
-        LocationFloor: 'Piso 2',
-        LocationArea: 'Baño',
-        Reference: 'REF-001',
-        AssignedToPersonalId: 'Carlos López',
-        PendienteReasignacion: false,
-        Subtype: 'Servicios higiénicos inoperativos',
-        Comment: [
-          {
-            Date: '2024-11-15T10:35:00Z',
-            UserId: 'coord1',
-            Role: 'COORDINATOR',
-            Message: 'Se ha asignado al área de mantenimiento',
+    const fetchIncidentDetails = async () => {
+      // Declarar existingIncident fuera del try-catch para que esté disponible en el catch
+      let existingIncident: Incident | undefined
+      
+      try {
+        setLoading(true)
+        
+        if (!user) {
+          console.error('Usuario no autenticado')
+          setLoading(false)
+          return
+        }
+
+        const incidentId = params.id as string
+        
+        // Decodificar el UUID que viene encodado desde la URL
+        const uuid = decodeURIComponent(incidentId)
+        
+        console.log('🔍 UUID recibido y decodificado:', {
+          incidentIdOriginal: incidentId,
+          uuidDecodificado: uuid,
+          longitud: uuid.length,
+          incluyeHash: uuid.includes('#')
+        })
+        
+        // Intentar obtener el tenant_id del incidente existente en la lista
+        existingIncident = allIncidents.find(inc => inc.UUID === uuid)
+        let tenantId = existingIncident?.Type || 'Limpieza' // El Type contiene el tenant_id original
+        
+        console.log('🔍 Búsqueda en lista local:', {
+          uuid,
+          tenantId,
+          existingIncident: !!existingIncident,
+          totalIncidents: allIncidents.length,
+          primerosUUIDs: allIncidents.slice(0, 3).map(inc => ({ uuid: inc.UUID, type: inc.Type }))
+        })
+        
+        // Si no encontramos el incidente en la lista, intentamos diferentes estrategias
+        if (!existingIncident) {
+          console.warn('⚠️ Incidente no encontrado en la lista local, usando tenant_id por defecto')
+          // Podrías implementar lógica adicional aquí, como extraer del UUID si tiene un patrón
+        }
+        
+        const incidentDetailUrl = process.env.NEXT_PUBLIC_LAMBDA_INCIDENT_ESPECIFIC_URL
+        
+        if (!incidentDetailUrl) {
+          console.error('❌ Variable de entorno NEXT_PUBLIC_LAMBDA_INCIDENT_ESPECIFIC_URL no configurada')
+          throw new Error('Configuración de endpoint no encontrada')
+        }
+        
+        // Construir URL con query parameters según el Lambda
+        const url = `${incidentDetailUrl}?tenant_id=${encodeURIComponent(tenantId)}&uuid=${encodeURIComponent(uuid)}`
+        
+        console.log('📡 Llamando endpoint:', {
+          url,
+          tenantId,
+          uuid,
+          token: localStorage.getItem('auth_token') ? 'presente' : 'ausente'
+        })
+        
+        // Llamar al endpoint para obtener el incidente específico
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
           },
-        ],
+        })
+
+        console.log('📊 Respuesta del servidor:', {
+          status: response.status,
+          statusText: response.statusText,
+          ok: response.ok,
+          headers: Object.fromEntries(response.headers)
+        })
+
+        if (!response.ok) {
+          let errorText = 'Error desconocido'
+          try {
+            errorText = await response.text()
+            console.error('❌ Respuesta de error:', errorText)
+          } catch (e) {
+            console.error('❌ No se pudo leer la respuesta de error:', e)
+          }
+          
+          // Si es un 404, mostrar mensaje más específico
+          if (response.status === 404) {
+            throw new Error('Incidente no encontrado')
+          } else if (response.status === 401 || response.status === 403) {
+            throw new Error('No tienes permisos para ver este incidente')
+          } else {
+            throw new Error(`Error del servidor (${response.status}): ${errorText}`)
+          }
+        }
+
+        const backendIncident = await response.json()
+        console.log('✅ Datos recibidos:', backendIncident)
+        
+        // Debug del mapeo de estados
+        console.log('📊 Debug del mapeo de estados:', {
+          statusOriginalBackend: backendIncident.Status,
+          tipoDelStatus: typeof backendIncident.Status,
+          statusMapeado: mapBackendStatusToFrontend(backendIncident.Status),
+          todosLosCamposDelBackend: Object.keys(backendIncident)
+        })
+        
+        // Mapear datos del backend al formato frontend
+        const mappedIncident: Incident = {
+          Type: backendIncident.tenant_id || '',
+          UUID: backendIncident.uuid || incidentId,
+          Title: backendIncident.Title || '',
+          Description: backendIncident.Description || '',
+          ResponsibleArea: Array.isArray(backendIncident.ResponsibleArea) 
+            ? backendIncident.ResponsibleArea 
+            : [backendIncident.ResponsibleArea].filter(Boolean),
+          CreatedById: backendIncident.CreatedById || '',
+          CreatedByName: backendIncident.CreatedByName || '',
+          Status: mapBackendStatusToFrontend(backendIncident.Status),
+          Priority: mapBackendPriorityToFrontend(backendIncident.Priority),
+          IsGlobal: backendIncident.IsGlobal || false,
+          CreatedAt: backendIncident.CreatedAt || '',
+          ExecutingAt: backendIncident.ExecutingAt || undefined,
+          ResolvedAt: backendIncident.ResolvedAt || undefined,
+          LocationTower: backendIncident.LocationTower || '',
+          LocationFloor: backendIncident.LocationFloor || '',
+          LocationArea: backendIncident.LocationArea || '',
+          Reference: backendIncident.Reference || '',
+          AssignedToPersonalId: backendIncident.AssignedToPersonalId || undefined,
+          PendienteReasignacion: backendIncident.PendienteReasignacion || false,
+          Comment: Array.isArray(backendIncident.Comment) ? backendIncident.Comment : [],
+          Subtype: backendIncident.Subtype || backendIncident.subType?.toString() || undefined,
+        }
+
+        setIncident(mappedIncident)
+        // Inicializar campos de edición
+        setEditTitle(mappedIncident.Title)
+        setEditDescription(mappedIncident.Description)
+      } catch (error) {
+        console.error('Error al cargar detalles del incidente:', error)
+        
+        // Fallback: usar datos del incidente local si está disponible
+        if (existingIncident) {
+          console.log('🔄 Usando datos del incidente local como fallback')
+          setIncident(existingIncident)
+          setEditTitle(existingIncident.Title)
+          setEditDescription(existingIncident.Description)
+        } else {
+          setIncident(null)
+        }
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchIncidentDetails()
+  }, [params.id, user, allIncidents])
+
+  // Verificar si el usuario puede editar este incidente
+  const canEdit = incident && user && 
+    user.Role === 'COMMUNITY' && 
+    incident.CreatedById === user.UUID && 
+    incident.Status === 'Pendiente'
+
+  // Debug: Log detallado para verificar permisos de edición
+  console.log('🔐 Verificación DETALLADA de permisos de edición:', {
+    // Condiciones individuales
+    '1_hasIncident': !!incident,
+    '2_hasUser': !!user,
+    '3_userRole': user?.Role,
+    '3_isRoleCommunity': user?.Role === 'COMMUNITY',
+    '4_incidentCreatedBy': incident?.CreatedById,
+    '4_userUUID': user?.UUID,
+    '4_isCreatedByUser': incident?.CreatedById === user?.UUID,
+    '5_incidentStatus': incident?.Status,
+    '5_isStatusPendiente': incident?.Status === 'Pendiente',
+    // Resultado final
+    'RESULTADO_canEdit': canEdit,
+    // Razón de fallo si no puede editar
+    'RAZON_FALLO': !canEdit ? (
+      !incident ? 'No hay incidente' :
+      !user ? 'No hay usuario' :
+      user.Role !== 'COMMUNITY' ? `Rol incorrecto: ${user.Role}` :
+      incident.CreatedById !== user.UUID ? `No es creador: ${incident.CreatedById} vs ${user.UUID}` :
+      incident.Status !== 'Pendiente' ? `Estado incorrecto: ${incident.Status} (esperado: Pendiente)` :
+      'Razón desconocida'
+    ) : 'Puede editar ✅'
+  })
+
+  const handleStartEdit = () => {
+    setIsEditing(true)
+    setEditTitle(incident?.Title || '')
+    setEditDescription(incident?.Description || '')
+  }
+
+  const handleCancelEdit = () => {
+    setIsEditing(false)
+    setEditTitle(incident?.Title || '')
+    setEditDescription(incident?.Description || '')
+  }
+
+  const handleSaveEdit = async () => {
+    if (!incident || !user) return
+
+    if (!editTitle.trim() || !editDescription.trim()) {
+      alert('El título y la descripción son obligatorios')
+      return
+    }
+
+    try {
+      setIsSubmitting(true)
+      
+      await editIncidentContent({
+        tenant_id: incident.Type,
+        uuid: incident.UUID,
+        actionToDo: 'Editar',
+        CreatedById: user.UUID,
+        new_title: editTitle.trim(),
+        new_description: editDescription.trim()
       })
-      setLoading(false)
-    }, 500)
-  }, [params.id])
+
+      // Actualizar el incidente local
+      setIncident(prev => prev ? {
+        ...prev,
+        Title: editTitle.trim(),
+        Description: editDescription.trim()
+      } : null)
+      
+      setIsEditing(false)
+      alert('Incidente editado exitosamente')
+    } catch (error) {
+      console.error('Error al editar incidente:', error)
+      alert('Error al editar el incidente')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   const handleCancelIncident = async () => {
-    if (confirm('¿Estás seguro de que deseas cancelar este incidente?')) {
-      // Aquí iría la llamada a la API para cancelar
-      alert('Incidente cancelado exitosamente')
+    if (!incident || !user) return
+
+    if (!confirm('¿Estás seguro de que deseas ELIMINAR este incidente?\n\n⚠️ Esta acción no se puede deshacer y el incidente será borrado permanentemente.')) {
+      return
+    }
+
+    try {
+      setIsSubmitting(true)
+      
+      // Por ahora usamos la función de autoridad para cerrar/eliminar
+      // TODO: Implementar función específica para eliminar por usuario COMMUNITY
+      const message = {
+        action: 'AuthorityManageIncidents',
+        tenant_id: incident.Type,
+        uuid: incident.UUID,
+        actionToDo: 'Eliminar'
+      }
+      
+      // Enviar directamente via WebSocket
+      if (typeof window !== 'undefined') {
+        wsClient.send(message)
+      }
+
+      alert('Incidente eliminado exitosamente')
       router.push('/my-reports')
+    } catch (error) {
+      console.error('Error al eliminar incidente:', error)
+      alert('Error al eliminar el incidente')
+      setIsSubmitting(false)
     }
   }
 
   const getTimelineEvents = () => {
     if (!incident) return []
     
-    const events: Array<{ date: string; title: string; description: string; icon: any }> = []
+    const events: Array<{ 
+      date: string; 
+      dateFormatted: string;
+      title: string; 
+      description: string; 
+      icon: any 
+    }> = []
     
     // Evento de creación
     events.push({
       date: incident.CreatedAt,
+      dateFormatted: formatPeruTime(incident.CreatedAt, { includeTime: true, includeSeconds: true }),
       title: 'Incidente creado',
       description: `Creado por ${incident.CreatedByName}`,
       icon: AlertTriangle,
@@ -77,6 +357,7 @@ export default function IncidentDetailPage() {
     if (incident.ExecutingAt) {
       events.push({
         date: incident.ExecutingAt,
+        dateFormatted: formatPeruTime(incident.ExecutingAt, { includeTime: true, includeSeconds: true }),
         title: 'En atención',
         description: 'El incidente está siendo atendido',
         icon: Clock,
@@ -87,6 +368,7 @@ export default function IncidentDetailPage() {
     if (incident.ResolvedAt) {
       events.push({
         date: incident.ResolvedAt,
+        dateFormatted: formatPeruTime(incident.ResolvedAt, { includeTime: true, includeSeconds: true }),
         title: 'Resuelto',
         description: 'El incidente ha sido resuelto',
         icon: CheckCircle,
@@ -97,7 +379,8 @@ export default function IncidentDetailPage() {
     incident.Comment.forEach((comment) => {
       events.push({
         date: comment.Date,
-        title: `Comentario de ${comment.Role}`,
+        dateFormatted: formatPeruTime(comment.Date, { includeTime: true, includeSeconds: true }),
+        title: `Comentario de ${getRoleLabel(comment.Role)}`,
         description: comment.Message,
         icon: MessageSquare,
       })
@@ -229,7 +512,6 @@ export default function IncidentDetailPage() {
   }
 
   const timelineEvents = getTimelineEvents()
-  const canEdit = incident.Status === 'PENDIENTE'
 
   return (
     <div className="min-h-screen bg-utec-gray">
@@ -254,21 +536,30 @@ export default function IncidentDetailPage() {
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent"></div>
             <div className="absolute bottom-0 left-0 right-0 p-6 text-white">
-              <h1 className="text-3xl md:text-4xl font-bold mb-4">{incident.Title}</h1>
+              <h1 className="text-3xl md:text-4xl font-bold mb-4">
+                {isEditing ? (
+                  <span className="inline-flex items-center">
+                    <Edit className="h-8 w-8 mr-3 text-yellow-300" />
+                    {editTitle || incident.Title}
+                  </span>
+                ) : (
+                  incident.Title
+                )}
+              </h1>
               <div className="flex items-center gap-3 flex-wrap">
                 <span
                   className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-semibold ${
-                    incident.Status === 'PENDIENTE'
+                    incident.Status === 'Pendiente'
                       ? 'bg-red-500 text-white'
-                      : incident.Status === 'EN_ATENCION'
+                      : incident.Status === 'EnAtencion'
                       ? 'bg-blue-500 text-white'
                       : 'bg-green-500 text-white'
                   }`}
                 >
-                  {incident.Status === 'EN_ATENCION' && <Wrench className="h-4 w-4 mr-1.5" />}
-                  {incident.Status === 'PENDIENTE'
+                  {incident.Status === 'EnAtencion' && <Wrench className="h-4 w-4 mr-1.5" />}
+                  {incident.Status === 'Pendiente'
                     ? 'Pendiente'
-                    : incident.Status === 'EN_ATENCION'
+                    : incident.Status === 'EnAtencion'
                     ? 'En Atención'
                     : 'Resuelto'}
                 </span>
@@ -285,26 +576,120 @@ export default function IncidentDetailPage() {
                 </span>
               </div>
             </div>
-            {canEdit && (
+            {(canEdit || process.env.NODE_ENV === 'development') && !isEditing && (
               <div className="absolute top-4 right-4 flex gap-2">
-                <Link
-                  href={`/incidents/${incident.UUID}/edit`}
-                  className="flex items-center space-x-2 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors shadow-lg"
+                <button
+                  onClick={canEdit ? handleStartEdit : () => alert('No tienes permisos para editar este incidente')}
+                  disabled={isSubmitting}
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${
+                    canEdit 
+                      ? 'bg-yellow-500 text-white hover:bg-yellow-600' 
+                      : 'bg-gray-400 text-white cursor-not-allowed'
+                  }`}
+                  title={canEdit ? 'Editar incidente' : 'Solo puedes editar tus propios incidentes en estado PENDIENTE'}
                 >
                   <Edit className="h-4 w-4" />
-                  <span>Editar</span>
-                </Link>
+                  <span>Editar {!canEdit && '(Bloqueado)'}</span>
+                </button>
                 <button
-                  onClick={handleCancelIncident}
-                  className="flex items-center space-x-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors shadow-lg"
+                  onClick={canEdit ? handleCancelIncident : () => alert('No tienes permisos para eliminar este incidente')}
+                  disabled={isSubmitting}
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${
+                    canEdit 
+                      ? 'bg-red-500 text-white hover:bg-red-600' 
+                      : 'bg-gray-400 text-white cursor-not-allowed'
+                  }`}
+                  title={canEdit ? 'Eliminar incidente' : 'Solo puedes eliminar tus propios incidentes en estado PENDIENTE'}
+                >
+                  <X className="h-4 w-4" />
+                  <span>Eliminar {!canEdit && '(Bloqueado)'}</span>
+                </button>
+              </div>
+            )}
+            
+            {/* Debug: Botones forzados para testing - remover en producción */}
+            {process.env.NODE_ENV === 'development' && !canEdit && (
+              <div className="absolute top-4 left-4 flex gap-2">
+                <div className="px-3 py-1 bg-gray-700 text-white text-xs rounded">
+                  Botones ocultos (canEdit: {canEdit ? 'true' : 'false'})
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Debug info - remover en producción */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded text-xs">
+            <strong>🔧 Debug Info:</strong>
+            <br />• Usuario rol: {user?.Role || 'No definido'}
+            <br />• Usuario UUID: {user?.UUID || 'No definido'}
+            <br />• Incidente creado por: {incident?.CreatedById || 'No definido'}
+            <br />• Estado incidente: {incident?.Status || 'No definido'}
+            <br />• Puede editar: {canEdit ? '✅ SÍ' : '❌ NO'}
+          </div>
+        )}
+
+        {/* Formulario de edición inline */}
+        {isEditing && (canEdit || process.env.NODE_ENV === 'development') && (
+          <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+              <Edit className="h-5 w-5 text-yellow-600 mr-2" />
+              Editando Incidente
+            </h2>
+            
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="edit-title" className="block text-sm font-medium text-gray-700 mb-2">
+                  Título *
+                </label>
+                <input
+                  id="edit-title"
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+                  placeholder="Título del incidente"
+                  disabled={isSubmitting}
+                />
+              </div>
+              
+              <div>
+                <label htmlFor="edit-description" className="block text-sm font-medium text-gray-700 mb-2">
+                  Descripción *
+                </label>
+                <textarea
+                  id="edit-description"
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+                  placeholder="Descripción detallada del incidente"
+                  disabled={isSubmitting}
+                />
+              </div>
+              
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={handleSaveEdit}
+                  disabled={isSubmitting || !editTitle.trim() || !editDescription.trim()}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                >
+                  <CheckCircle className="h-4 w-4" />
+                  <span>{isSubmitting ? 'Guardando...' : 'Guardar Cambios'}</span>
+                </button>
+                <button
+                  onClick={handleCancelEdit}
+                  disabled={isSubmitting}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
                 >
                   <X className="h-4 w-4" />
                   <span>Cancelar</span>
                 </button>
               </div>
-            )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Dos columnas: Izquierda (Detalles) y Derecha (Estado y Timeline) */}
         <div className="grid lg:grid-cols-3 gap-6">
@@ -317,8 +702,13 @@ export default function IncidentDetailPage() {
                   <Info className="h-5 w-5 text-utec-secondary" />
                 </div>
                 Descripción
+                {isEditing && (
+                  <span className="ml-2 text-sm text-yellow-600 font-normal">(editando...)</span>
+                )}
               </h2>
-              <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{incident.Description}</p>
+              <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+                {isEditing ? editDescription : incident.Description}
+              </p>
             </div>
 
             {/* Ubicación */}
@@ -372,7 +762,10 @@ export default function IncidentDetailPage() {
                 Creado
               </h2>
               <p className="text-sm text-gray-700">
-                {format(new Date(incident.CreatedAt), "dd/MM/yyyy 'a las' HH:mm")}
+                {formatPeruTime(incident.CreatedAt, { includeTime: true })}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Tiempo de espera: {formatWaitingTime(calculateWaitingMinutes(incident.CreatedAt))}
               </p>
             </div>
 
@@ -421,7 +814,7 @@ export default function IncidentDetailPage() {
                         </div>
                         <div className="ml-6 flex-1">
                           <p className="text-xs text-gray-500 mb-1">
-                            {format(new Date(event.date), "dd/MM/yyyy 'a las' HH:mm")}
+                            {event.dateFormatted}
                           </p>
                           {userName && (
                             <div className="flex items-center gap-2 mb-1">

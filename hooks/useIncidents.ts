@@ -5,8 +5,15 @@ import { Incident } from '@/types'
 import { authenticatedFetch } from '@/lib/auth'
 import { wsClient } from '@/lib/websocket'
 import { useUser } from '@/contexts/UserContext'
+import { calculateWaitingMinutes } from '@/lib/dateUtils'
 
 function mapBackendIncidentToFrontend(backendIncident: any): Incident {
+  console.log('🔄 Mapeando incidente:', {
+    originalUuid: backendIncident.uuid,
+    fallbackUuid: backendIncident.UUID,
+    tenantId: backendIncident.tenant_id
+  })
+  
   return {
     Type: backendIncident.tenant_id || backendIncident.Type || '',
     UUID: backendIncident.uuid || backendIncident.UUID || '',
@@ -31,6 +38,7 @@ function mapBackendIncidentToFrontend(backendIncident: any): Incident {
     PendienteReasignacion: backendIncident.PendienteReasignacion || false,
     Comment: Array.isArray(backendIncident.Comment) ? backendIncident.Comment : [],
     Subtype: backendIncident.Subtype || backendIncident.subType?.toString() || undefined,
+    WaitingMinutes: calculateWaitingMinutes(backendIncident.CreatedAt || ''),
   }
 }
 

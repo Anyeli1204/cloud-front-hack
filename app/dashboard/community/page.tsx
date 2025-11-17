@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react'
 import Image from 'next/image'
 import Navbar from '@/components/Navbar'
+import RoleGuard from '@/components/RoleGuard'
 import Map from '@/components/Map'
 import { AlertTriangle, Clock, CheckCircle, TrendingUp, MapPin, Bell, FileText, ChevronLeft, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
@@ -10,7 +11,7 @@ import { Incident } from '@/types'
 import { useUser } from '@/contexts/UserContext'
 import { useIncidents } from '@/hooks/useIncidents'
 
-export default function CommunityDashboard() {
+function CommunityDashboardContent() {
   const { user } = useUser()
   const { incidents: allIncidents, loading } = useIncidents()
   
@@ -239,6 +240,14 @@ export default function CommunityDashboard() {
 
       </div>
     </div>
+  )
+}
+
+export default function CommunityDashboard() {
+  return (
+    <RoleGuard allowedRoles={['COMMUNITY']}>
+      <CommunityDashboardContent />
+    </RoleGuard>
   )
 }
 

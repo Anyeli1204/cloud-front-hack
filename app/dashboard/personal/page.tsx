@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Navbar from '@/components/Navbar'
+import RoleGuard from '@/components/RoleGuard'
 import Map from '@/components/Map'
 import { AlertTriangle, Clock, CheckCircle, TrendingUp, MapPin, Users, CheckCircle2, MessageSquare } from 'lucide-react'
 import Link from 'next/link'
@@ -9,7 +10,7 @@ import { Incident } from '@/types'
 import { useUser } from '@/contexts/UserContext'
 import { format } from 'date-fns'
 
-export default function PersonalDashboard() {
+function PersonalDashboardContent() {
   const { user } = useUser()
   const [assignedIncidents, setAssignedIncidents] = useState<Incident[]>([])
   const [areaIncidents, setAreaIncidents] = useState<Incident[]>([])
@@ -294,6 +295,14 @@ export default function PersonalDashboard() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function PersonalDashboard() {
+  return (
+    <RoleGuard allowedRoles={['PERSONAL']}>
+      <PersonalDashboardContent />
+    </RoleGuard>
   )
 }
 

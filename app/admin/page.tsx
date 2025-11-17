@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Navbar from '@/components/Navbar'
+import RoleGuard from '@/components/RoleGuard'
 import { AlertTriangle, Clock, CheckCircle, TrendingUp, Users, Filter, Download } from 'lucide-react'
 
 interface Incident {
@@ -94,14 +95,15 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-utec-gray">
-      <Navbar />
-      
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Panel Administrativo</h1>
-          <p className="text-gray-600">Gestiona todos los incidentes reportados en el campus</p>
-        </div>
+    <RoleGuard allowedRoles={['COORDINATOR', 'AUTHORITY']}>
+      <div className="min-h-screen bg-utec-gray">
+        <Navbar />
+        
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">Panel Administrativo</h1>
+            <p className="text-gray-600">Gestiona todos los incidentes reportados en el campus</p>
+          </div>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
@@ -289,6 +291,7 @@ export default function AdminPage() {
         </div>
       </div>
     </div>
+    </RoleGuard>
   )
 }
 

@@ -14,7 +14,7 @@ export interface Incident {
   ResponsibleArea: string[]
   CreatedById: string
   CreatedByName: string
-  Status: 'PENDIENTE' | 'EN_ATENCION' | 'RESUELTO'
+  Status: 'Pendiente' | 'EnAtencion' | 'Resuelto'
   Priority: 'BAJO' | 'MEDIA' | 'ALTA' | 'CRÍTICO'
   IsGlobal: boolean
   CreatedAt: string // timestamp
@@ -29,6 +29,7 @@ export interface Incident {
   PendienteReasignacion: boolean
   Images?: string[] // URLs de las imágenes del incidente
   Subtype?: string // Subtipo del incidente (ej: "Convivencia", "Robos", etc.)
+  WaitingMinutes?: number // Minutos de espera calculados desde la creación
 }
 
 // Tipos para la tabla de Users

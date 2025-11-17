@@ -1,5 +1,7 @@
 'use client'
 
+'use client'
+
 import { useState, useEffect } from 'react'
 import Navbar from '@/components/Navbar'
 import { AlertTriangle, Globe, Clock, CheckCircle, Eye, Search, Filter } from 'lucide-react'

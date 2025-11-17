@@ -1,3 +1,5 @@
+'use client'
+
 // Utilidades para manejar el token de autenticación
 
 export interface TokenData {

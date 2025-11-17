@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import Navbar from '@/components/Navbar'
+import RoleGuard from '@/components/RoleGuard'
 import { AlertTriangle, Clock, CheckCircle, TrendingUp, MapPin, Shield, BarChart3, Users, FileText, Download } from 'lucide-react'
 import Link from 'next/link'
 import { Incident } from '@/types'
@@ -10,7 +11,7 @@ import { useUser } from '@/contexts/UserContext'
 
 const Map = dynamic(() => import('@/components/Map'), { ssr: false })
 
-export default function AuthorityDashboard() {
+function AuthorityDashboardContent() {
   const { user } = useUser()
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [globalIncidents, setGlobalIncidents] = useState<Incident[]>([])
@@ -265,6 +266,14 @@ export default function AuthorityDashboard() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function AuthorityDashboard() {
+  return (
+    <RoleGuard allowedRoles={['AUTHORITY']}>
+      <AuthorityDashboardContent />
+    </RoleGuard>
   )
 }
 

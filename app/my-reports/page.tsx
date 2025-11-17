@@ -9,6 +9,7 @@ import { Incident } from '@/types'
 import { useRouter } from 'next/navigation'
 import { useIncidents } from '@/hooks/useIncidents'
 import { useUser } from '@/contexts/UserContext'
+import { formatPeruTime, formatWaitingTime, calculateWaitingMinutes } from '@/lib/dateUtils'
 
 export default function MyReportsPage() {
   const router = useRouter()
@@ -286,7 +287,7 @@ export default function MyReportsPage() {
             filteredIncidents.map((incident) => (
               <Link 
                 key={incident.UUID} 
-                href={`/incidents/${incident.UUID}`}
+                href={`/incidents/${encodeURIComponent(incident.UUID)}`}
                 className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow overflow-hidden cursor-pointer block"
               >
                 {/* Imagen: primera del alumno o predeterminada */}
@@ -315,7 +316,10 @@ export default function MyReportsPage() {
                     </span>
                     {getStatusBadge(incident.Status)}
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200">
-                      {format(new Date(incident.CreatedAt), 'yyyy-MM-dd')}
+                      {formatPeruTime(incident.CreatedAt, { includeTime: false })}
+                    </span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700 border border-orange-200">
+                      {formatWaitingTime(calculateWaitingMinutes(incident.CreatedAt))}
                     </span>
                   </div>
                 </div>

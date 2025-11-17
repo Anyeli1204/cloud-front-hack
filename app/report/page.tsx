@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Navbar from '@/components/Navbar'
+import RoleGuard from '@/components/RoleGuard'
 import { AlertTriangle, ArrowLeft, ArrowRight, Camera, Shield, Sparkles, Wrench, FlaskConical, Monitor, CheckCircle2, X, FileText, Bell } from 'lucide-react'
 import { useUser } from '@/contexts/UserContext'
 import { publishIncident } from '@/lib/websocket-events'
@@ -26,7 +27,7 @@ interface IncidentCategory {
   subtypes: IncidentSubtype[]
 }
 
-export default function ReportPage() {
+function ReportPageContent() {
   const router = useRouter()
   const { user } = useUser()
   const [step, setStep] = useState(1)
@@ -740,5 +741,13 @@ export default function ReportPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function ReportPage() {
+  return (
+    <RoleGuard allowedRoles={['COMMUNITY']}>
+      <ReportPageContent />
+    </RoleGuard>
   )
 }

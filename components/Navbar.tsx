@@ -9,6 +9,7 @@ import Notifications from './Notifications'
 import { useUser } from '@/contexts/UserContext'
 import { useRouter } from 'next/navigation'
 import { clearToken } from '@/lib/auth'
+import { wsClient } from '@/lib/websocket'
 
 export default function Navbar() {
   const pathname = usePathname()
@@ -18,9 +19,19 @@ export default function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false)
 
   const handleLogout = () => {
+    console.log('[Navbar] 🚪 Iniciando logout...')
+    
+    // 1. Desconectar WebSocket PRIMERO - esto debe activar $disconnect en tu Lambda
+    wsClient.disconnect()
+    
+    // 2. Limpiar estado del usuario y token
     setUser(null)
     clearToken()
+    
+    // 3. Redirigir al login
     router.push('/login')
+    
+    console.log('[Navbar] ✅ Logout completado - $disconnect debería haber limpiado DynamoDB')
   }
 
   useEffect(() => {

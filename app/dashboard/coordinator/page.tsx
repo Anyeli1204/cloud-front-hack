@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react'
 import Navbar from '@/components/Navbar'
+import RoleGuard from '@/components/RoleGuard'
 import Map from '@/components/Map'
 import { AlertTriangle, Clock, CheckCircle, TrendingUp, MapPin, Users, Settings, BarChart3, UserPlus } from 'lucide-react'
 import Link from 'next/link'
@@ -10,7 +11,7 @@ import { useUser } from '@/contexts/UserContext'
 import { format } from 'date-fns'
 import { useIncidents } from '@/hooks/useIncidents'
 
-export default function CoordinatorDashboard() {
+function CoordinatorDashboardContent() {
   const { user } = useUser()
   // Obtener incidentes filtrados por área del coordinador
   const { incidents: allIncidents, loading } = useIncidents(
@@ -235,6 +236,14 @@ export default function CoordinatorDashboard() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function CoordinatorDashboard() {
+  return (
+    <RoleGuard allowedRoles={['COORDINATOR']}>
+      <CoordinatorDashboardContent />
+    </RoleGuard>
   )
 }
 

@@ -1,3 +1,5 @@
+'use client'
+
 import { wsClient } from './websocket'
 
 export function publishIncident(data: {
